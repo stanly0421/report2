@@ -298,12 +298,7 @@ void Widget::setupUI()
         "   text-decoration: underline;"
         "}"
     );
-    videoDisplayArea->setHtml(
-        "<div style='text-align: center; padding-top: 100px;'>"
-        "<h2 style='color: #1DB954; font-size: 32px;'>🎵 音樂播放器</h2>"
-        "<p style='color: #B3B3B3; font-size: 18px; margin-top: 20px;'>選擇一首歌曲開始播放</p>"
-        "</div>"
-    );
+    videoDisplayArea->setHtml(generateWelcomeHTML());
     centerLayout->addWidget(videoDisplayArea, 1);
     
     // 字幕顯示區域
@@ -892,12 +887,7 @@ void Widget::onDeletePlaylistClicked()
                                     .arg(playlists[currentPlaylistIndex].name),
                                     QMessageBox::Yes | QMessageBox::No);
     if (ret == QMessageBox::Yes) {
-        videoDisplayArea->setHtml(
-            "<div style='text-align: center; padding-top: 100px;'>"
-            "<h2 style='color: #1DB954; font-size: 32px;'>🎵 音樂播放器</h2>"
-            "<p style='color: #B3B3B3; font-size: 18px; margin-top: 20px;'>選擇一首歌曲開始播放</p>"
-            "</div>"
-        );
+        videoDisplayArea->setHtml(generateWelcomeHTML());
         currentVideoIndex = -1;
         isPlaying = false;
         playlists.removeAt(currentPlaylistIndex);
@@ -1182,6 +1172,28 @@ QList<int> Widget::getUnplayedVideoIndices(bool excludeCurrent)
     return unplayedVideos;
 }
 
+// 通用 HTML 基礎樣式
+static const QString BASE_HTML_STYLE = 
+    "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
+    "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
+    "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }";
+
+QString Widget::generateWelcomeHTML()
+{
+    return QString(
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<style>%1</style>"
+        "</head>"
+        "<body>"
+        "<h2>🎵 音樂播放器</h2>"
+        "<p>選擇一首歌曲開始播放</p>"
+        "</body>"
+        "</html>"
+    ).arg(BASE_HTML_STYLE);
+}
+
 QString Widget::generateYouTubeDisplayHTML(const QString& title, const QString& channel, const QString& videoId)
 {
     QString watchUrl = QString("https://www.youtube.com/watch?v=%1").arg(videoId);
@@ -1190,24 +1202,23 @@ QString Widget::generateYouTubeDisplayHTML(const QString& title, const QString& 
         "<html>"
         "<head>"
         "<style>"
-        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
-        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
-        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+        "%1"
         "a { color: #1DB954; text-decoration: none; font-size: 20px; font-weight: bold; }"
         "a:hover { color: #1ED760; text-decoration: underline; }"
         ".info { font-size: 14px; color: #888; margin: 30px 0; }"
         "</style>"
         "</head>"
         "<body>"
-        "<h2>🎵 %1</h2>"
-        "<p>%2</p>"
+        "<h2>🎵 %2</h2>"
+        "<p>%3</p>"
         "<div style='margin: 40px 0;'>"
-        "<a href='%3'>🔗 點擊此處在瀏覽器中播放</a>"
+        "<a href='%4'>🔗 點擊此處在瀏覽器中播放</a>"
         "</div>"
         "<p class='info'>由於不使用 WebEngine，YouTube 影片將在瀏覽器中播放</p>"
         "</body>"
         "</html>"
-    ).arg(title.toHtmlEscaped())
+    ).arg(BASE_HTML_STYLE)
+     .arg(title.toHtmlEscaped())
      .arg(channel.toHtmlEscaped())
      .arg(watchUrl);
 }
@@ -1219,20 +1230,19 @@ QString Widget::generateLocalMusicHTML(const QString& title, const QString& file
         "<html>"
         "<head>"
         "<style>"
-        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
-        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
-        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+        "%1"
         ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
         "</style>"
         "</head>"
         "<body>"
         "<h2>🎵 本地音樂</h2>"
-        "<p>%1</p>"
-        "<p class='filename'>檔案: %2</p>"
+        "<p>%2</p>"
+        "<p class='filename'>檔案: %3</p>"
         "<p style='color: #666; font-size: 12px; margin-top: 30px;'>正在播放本地音樂檔案</p>"
         "</body>"
         "</html>"
-    ).arg(title.toHtmlEscaped())
+    ).arg(BASE_HTML_STYLE)
+     .arg(title.toHtmlEscaped())
      .arg(fileName.toHtmlEscaped());
 }
 

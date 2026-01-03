@@ -103,6 +103,7 @@ private:
     QString extractYouTubeVideoId(const QString& url);
     QString generateYouTubeDisplayHTML(const QString& title, const QString& channel, const QString& videoId);
     QString generateLocalMusicHTML(const QString& title, const QString& fileName);
+    QString generateWelcomeHTML();
     void updateVideoLabels(const VideoInfo& video);
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
@@ -113,7 +114,7 @@ private:
     QMediaPlayer* mediaPlayer;
     QAudioOutput* audioOutput;
     
-    // 影片顯示區域 - 使用 QTextBrowser 以支援 HTML 顯示和連結點擊
+    // 影片顯示區域 - 使用 QTextBrowser 顯示內容，點擊連結開啟瀏覽器
     QTextBrowser* videoDisplayArea;
     
     // Whisper 轉錄
