@@ -1,5 +1,61 @@
 # 更新日誌 (Changelog)
 
+## [v2.1] - 2026-01-03
+
+### 新增功能 ✨
+- **加入播放清單功能**: 將「加入最愛」改為更靈活的「加入播放清單」功能
+  - 新增目標播放清單下拉選單（QComboBox）
+  - 按鈕文字改為「➕ 加入播放清單」
+  - 可選擇要加入的目標播放清單
+  - 自動過濾當前播放清單
+  - 自動檢查重複，避免同一首歌多次加入
+  - 加入成功後顯示確認訊息
+
+### 改進功能 🎯
+- **播放清單管理**: 
+  - 移除右鍵選單中的「加入最愛」選項
+  - 改用統一的「加入播放清單」按鈕和下拉選單
+  - 簡化播放清單操作流程
+  
+- **按鈕狀態管理**:
+  - 自動啟用/停用加入播放清單按鈕
+  - 根據是否有其他可選播放清單動態調整
+  - 只在正在播放歌曲時才啟用功能
+
+### 技術實現 🔧
+- 新增成員變數：
+  - `addToPlaylistButton`: QPushButton* - 加入播放清單按鈕
+  - `targetPlaylistComboBox`: QComboBox* - 目標播放清單選擇器
+
+- 移除成員變數：
+  - `toggleFavoriteButton`: QPushButton* - 舊的最愛按鈕
+
+- 新增成員函數：
+  - `updateTargetPlaylistComboBox()`: 更新目標播放清單下拉選單
+  - `onAddToPlaylistClicked()`: 處理加入播放清單按鈕點擊
+
+- 移除成員函數：
+  - `onToggleFavoriteClicked()`: 舊的最愛按鈕處理
+  - `toggleFavoriteForVideo()`: 舊的最愛切換邏輯
+
+- 更新函數：
+  - `setupUI()`: 添加新按鈕和下拉選單控件
+  - `createConnections()`: 連接新按鈕信號
+  - `onPlaylistChanged()`: 調用 `updateTargetPlaylistComboBox()`
+  - `onNewPlaylistClicked()`: 創建新播放清單後更新下拉選單
+  - `updateButtonStates()`: 更新新按鈕的啟用狀態
+  - `playVideo()`: 移除舊的最愛按鈕文字更新邏輯
+  - `onPlaylistContextMenu()`: 移除右鍵選單的加入最愛選項
+  - Widget 建構函數: 初始化時調用 `updateTargetPlaylistComboBox()`
+
+### 文檔更新 📚
+- 更新 README.md：
+  - 新增「最新改進（v2.1）」章節
+  - 更新「功能特色」第5點說明
+  - 更新「操作說明」的播放控制和播放清單管理說明
+  - 更新「界面預覽」描述新的控制元件
+  - 將 v2.0 改進移至「之前的改進」章節
+
 ## [v2.0] - 2026-01-03
 
 ### 新增功能 ✨
