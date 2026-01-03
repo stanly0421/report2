@@ -3,11 +3,18 @@
 
 #include <QWidget>
 #include <QMediaPlayer>
-#include <QMediaPlaylist>
 #include <QFileDialog>
 #include <QListWidgetItem>
 #include <QMap>
 #include <QPair>
+#include <QUrl>
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#include <QMediaPlaylist>
+#include <QMediaContent>
+#else
+#include <QAudioOutput>
+#endif
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -45,7 +52,13 @@ private slots:
     // Player state changes
     void onPlayerPositionChanged(qint64 position);
     void onPlayerDurationChanged(qint64 duration);
+    
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     void onCurrentMediaChanged(const QMediaContent &media);
+#else
+    void onMediaStatusChanged(QMediaPlayer::MediaStatus status);
+    void onPlaybackStateChanged(QMediaPlayer::PlaybackState state);
+#endif
     
     // Lyrics
     void onLoadLyricsButtonClicked();
@@ -55,7 +68,14 @@ private slots:
 private:
     Ui::Widget *ui;
     QMediaPlayer *player;
+    
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QMediaPlaylist *playlist;
+#else
+    QAudioOutput *audioOutput;
+    QList<QUrl> playlist;
+    int currentIndex;
+#endif
     
     // Lyrics data: time in milliseconds -> lyrics text
     QMap<qint64, QString> lyricsMap;
@@ -66,6 +86,8 @@ private:
     void loadLyricsFile(const QString &filename);
     void updateCurrentLyrics(qint64 position);
     void updatePlaylistDisplay();
+    void playCurrentIndex();
+    void updateCurrentSongDisplay();
 };
 
 #endif // WIDGET_H

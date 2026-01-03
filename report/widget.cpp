@@ -5,22 +5,37 @@
 #include <QRegularExpression>
 #include <QDebug>
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QStringConverter>
+#endif
+
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
 {
     ui->setupUi(this);
     
-    // Initialize media player and playlist
+    // Initialize media player
     player = new QMediaPlayer(this);
+    
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    // Qt5: Use QMediaPlaylist
     playlist = new QMediaPlaylist(this);
     player->setPlaylist(playlist);
-    
-    // Set playlist to loop
     playlist->setPlaybackMode(QMediaPlaylist::Loop);
+#else
+    // Qt6: Use manual playlist management
+    audioOutput = new QAudioOutput(this);
+    player->setAudioOutput(audioOutput);
+    currentIndex = -1;
+#endif
     
     // Set initial volume
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     player->setVolume(50);
+#else
+    audioOutput->setVolume(0.5); // Qt6 uses 0.0-1.0 range
+#endif
     
     // Connect playlist management buttons
     connect(ui->addButton, &QPushButton::clicked, this, &Widget::onAddButtonClicked);
@@ -43,7 +58,13 @@ Widget::Widget(QWidget *parent)
     // Connect player signals
     connect(player, &QMediaPlayer::positionChanged, this, &Widget::onPlayerPositionChanged);
     connect(player, &QMediaPlayer::durationChanged, this, &Widget::onPlayerDurationChanged);
+    
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     connect(playlist, &QMediaPlaylist::currentMediaChanged, this, &Widget::onCurrentMediaChanged);
+#else
+    connect(player, &QMediaPlayer::mediaStatusChanged, this, &Widget::onMediaStatusChanged);
+    connect(player, &QMediaPlayer::playbackStateChanged, this, &Widget::onPlaybackStateChanged);
+#endif
     
     // Connect lyrics buttons
     connect(ui->loadLyricsButton, &QPushButton::clicked, this, &Widget::onLoadLyricsButtonClicked);
@@ -67,7 +88,11 @@ void Widget::onAddButtonClicked()
     );
     
     for (const QString &file : files) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         playlist->addMedia(QUrl::fromLocalFile(file));
+#else
+        playlist.append(QUrl::fromLocalFile(file));
+#endif
         QFileInfo fileInfo(file);
         ui->playlistWidget->addItem(fileInfo.fileName());
     }
@@ -76,20 +101,43 @@ void Widget::onAddButtonClicked()
 void Widget::onRemoveButtonClicked()
 {
     int currentRow = ui->playlistWidget->currentRow();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     if (currentRow >= 0 && currentRow < playlist->mediaCount()) {
         playlist->removeMedia(currentRow);
         delete ui->playlistWidget->takeItem(currentRow);
     }
+#else
+    if (currentRow >= 0 && currentRow < playlist.count()) {
+        playlist.removeAt(currentRow);
+        delete ui->playlistWidget->takeItem(currentRow);
+        if (currentRow == currentIndex) {
+            player->stop();
+            currentIndex = -1;
+        } else if (currentRow < currentIndex) {
+            currentIndex--;
+        }
+    }
+#endif
 }
 
 void Widget::onMoveUpButtonClicked()
 {
     int currentRow = ui->playlistWidget->currentRow();
     if (currentRow > 0) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         // Move in playlist
         QMediaContent media = playlist->media(currentRow);
         playlist->removeMedia(currentRow);
         playlist->insertMedia(currentRow - 1, media);
+#else
+        // Move in playlist
+        playlist.move(currentRow, currentRow - 1);
+        if (currentIndex == currentRow) {
+            currentIndex = currentRow - 1;
+        } else if (currentIndex == currentRow - 1) {
+            currentIndex = currentRow;
+        }
+#endif
         
         // Move in list widget
         QListWidgetItem *item = ui->playlistWidget->takeItem(currentRow);
@@ -101,11 +149,22 @@ void Widget::onMoveUpButtonClicked()
 void Widget::onMoveDownButtonClicked()
 {
     int currentRow = ui->playlistWidget->currentRow();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     if (currentRow >= 0 && currentRow < playlist->mediaCount() - 1) {
         // Move in playlist
         QMediaContent media = playlist->media(currentRow);
         playlist->removeMedia(currentRow);
         playlist->insertMedia(currentRow + 1, media);
+#else
+    if (currentRow >= 0 && currentRow < playlist.count() - 1) {
+        // Move in playlist
+        playlist.move(currentRow, currentRow + 1);
+        if (currentIndex == currentRow) {
+            currentIndex = currentRow + 1;
+        } else if (currentIndex == currentRow + 1) {
+            currentIndex = currentRow;
+        }
+#endif
         
         // Move in list widget
         QListWidgetItem *item = ui->playlistWidget->takeItem(currentRow);
@@ -117,14 +176,29 @@ void Widget::onMoveDownButtonClicked()
 void Widget::onPlaylistItemDoubleClicked(QListWidgetItem *item)
 {
     int row = ui->playlistWidget->row(item);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     playlist->setCurrentIndex(row);
     player->play();
+#else
+    currentIndex = row;
+    playCurrentIndex();
+#endif
 }
+
 
 // Player control slots
 void Widget::onPlayButtonClicked()
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     player->play();
+#else
+    if (currentIndex == -1 && !playlist.isEmpty()) {
+        currentIndex = 0;
+        playCurrentIndex();
+    } else {
+        player->play();
+    }
+#endif
 }
 
 void Widget::onPauseButtonClicked()
@@ -141,12 +215,32 @@ void Widget::onStopButtonClicked()
 
 void Widget::onPreviousButtonClicked()
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     playlist->previous();
+#else
+    if (!playlist.isEmpty() && currentIndex > 0) {
+        currentIndex--;
+        playCurrentIndex();
+    } else if (!playlist.isEmpty()) {
+        currentIndex = playlist.count() - 1; // Loop to end
+        playCurrentIndex();
+    }
+#endif
 }
 
 void Widget::onNextButtonClicked()
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     playlist->next();
+#else
+    if (!playlist.isEmpty() && currentIndex < playlist.count() - 1) {
+        currentIndex++;
+        playCurrentIndex();
+    } else if (!playlist.isEmpty()) {
+        currentIndex = 0; // Loop to beginning
+        playCurrentIndex();
+    }
+#endif
 }
 
 // Progress and volume slots
@@ -157,7 +251,11 @@ void Widget::onProgressSliderMoved(int position)
 
 void Widget::onVolumeSliderMoved(int value)
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     player->setVolume(value);
+#else
+    audioOutput->setVolume(value / 100.0); // Convert 0-100 to 0.0-1.0
+#endif
     ui->volumeValueLabel->setText(QString::number(value));
 }
 
@@ -179,6 +277,7 @@ void Widget::onPlayerDurationChanged(qint64 duration)
     ui->totalTimeLabel->setText(formatTime(duration));
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 void Widget::onCurrentMediaChanged(const QMediaContent &media)
 {
     if (media.isNull()) {
@@ -188,12 +287,28 @@ void Widget::onCurrentMediaChanged(const QMediaContent &media)
         ui->currentSongLabel->setText("Now playing: " + filename);
         
         // Highlight current song in playlist
-        int currentIndex = playlist->currentIndex();
-        if (currentIndex >= 0) {
-            ui->playlistWidget->setCurrentRow(currentIndex);
+        int currentIdx = playlist->currentIndex();
+        if (currentIdx >= 0) {
+            ui->playlistWidget->setCurrentRow(currentIdx);
         }
     }
 }
+#else
+void Widget::onMediaStatusChanged(QMediaPlayer::MediaStatus status)
+{
+    if (status == QMediaPlayer::EndOfMedia) {
+        // Song finished, play next
+        onNextButtonClicked();
+    }
+    updateCurrentSongDisplay();
+}
+
+void Widget::onPlaybackStateChanged(QMediaPlayer::PlaybackState state)
+{
+    updateCurrentSongDisplay();
+}
+#endif
+
 
 // Lyrics slots
 void Widget::onLoadLyricsButtonClicked()
@@ -250,8 +365,12 @@ void Widget::loadLyricsFile(const QString &filename)
     }
     
     QTextStream in(&file);
-    // Try to detect encoding
+    // Set UTF-8 encoding (compatible with both Qt5 and Qt6)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     in.setCodec("UTF-8");
+#else
+    in.setEncoding(QStringConverter::Utf8);
+#endif
     
     // Regular expression to match LRC format: [mm:ss.xx] or [mm:ss]
     QRegularExpression timeRegex(R"(\[(\d{2}):(\d{2})(?:\.(\d{2}))?\])");
@@ -321,3 +440,25 @@ void Widget::updateCurrentLyrics(qint64 position)
         }
     }
 }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+void Widget::playCurrentIndex()
+{
+    if (currentIndex >= 0 && currentIndex < playlist.count()) {
+        player->setSource(playlist[currentIndex]);
+        player->play();
+        ui->playlistWidget->setCurrentRow(currentIndex);
+        updateCurrentSongDisplay();
+    }
+}
+
+void Widget::updateCurrentSongDisplay()
+{
+    if (currentIndex >= 0 && currentIndex < playlist.count()) {
+        QString filename = QFileInfo(playlist[currentIndex].toLocalFile()).fileName();
+        ui->currentSongLabel->setText("Now playing: " + filename);
+    } else {
+        ui->currentSongLabel->setText("No song playing");
+    }
+}
+#endif
