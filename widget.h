@@ -119,6 +119,7 @@ private:
     void updateVideoLabels(const VideoInfo& video);
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
+    void loadSrt(const QString& srtFilePath);
     void restoreCurrentVideoTitle();
     void updateLocalMusicDisplay(const QString& title, const QString& fileName, const QString& subtitles);
 
@@ -133,6 +134,7 @@ private:
     
     // Whisper 轉錄
     QProcess* whisperProcess;
+    QString currentSrtFilePath;  // 當前 SRT 檔案路徑
     
     // UI 元件
     QPushButton* loadLocalFileButton;
