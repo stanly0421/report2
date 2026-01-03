@@ -11,15 +11,16 @@
 #include <QStandardPaths>
 #include <QSplitter>
 #include <QRegularExpression>
-#include <QWebEngineView>
+#include <QTextBrowser>
 #include <QProcess>
+#include <QDesktopServices>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
     , mediaPlayer(new QMediaPlayer(this))
     , audioOutput(new QAudioOutput(this))
-    , videoWebView(nullptr)
+    , videoDisplayArea(nullptr)
     , whisperProcess(new QProcess(this))
     , subtitleDisplay(nullptr)
     , currentPlaylistIndex(-1)
@@ -276,14 +277,34 @@ void Widget::setupUI()
     channelLabel->setStyleSheet("font-size: 14px; color: #B3B3B3;");
     centerLayout->addWidget(channelLabel);
     
-    // 影片顯示區域 - 使用 WebEngineView 支援嵌入式 YouTube 播放
-    videoWebView = new QWebEngineView(centerPanel);
-    videoWebView->setMinimumHeight(400);
-    videoWebView->setStyleSheet(
-        "background-color: #000000;"
-        "border-radius: 8px;"
+    // 影片顯示區域 - 使用 QTextBrowser 支援 HTML 顯示和連結點擊
+    videoDisplayArea = new QTextBrowser(centerPanel);
+    videoDisplayArea->setMinimumHeight(400);
+    videoDisplayArea->setOpenExternalLinks(true);  // 允許點擊連結在瀏覽器中開啟
+    videoDisplayArea->setStyleSheet(
+        "QTextBrowser {"
+        "   background-color: #000000;"
+        "   border-radius: 8px;"
+        "   color: #FFFFFF;"
+        "   font-size: 16px;"
+        "   padding: 20px;"
+        "}"
+        "QTextBrowser a {"
+        "   color: #1DB954;"
+        "   text-decoration: none;"
+        "}"
+        "QTextBrowser a:hover {"
+        "   color: #1ED760;"
+        "   text-decoration: underline;"
+        "}"
     );
-    centerLayout->addWidget(videoWebView, 1);
+    videoDisplayArea->setHtml(
+        "<div style='text-align: center; padding-top: 100px;'>"
+        "<h2 style='color: #1DB954; font-size: 32px;'>🎵 音樂播放器</h2>"
+        "<p style='color: #B3B3B3; font-size: 18px; margin-top: 20px;'>選擇一首歌曲開始播放</p>"
+        "</div>"
+    );
+    centerLayout->addWidget(videoDisplayArea, 1);
     
     // 字幕顯示區域
     subtitleDisplay = new QTextEdit(centerPanel);
@@ -527,9 +548,36 @@ void Widget::playYouTubeLink(const QString& link)
     video.isLocalFile = false;
     video.filePath = "";
     
-    // 使用 YouTube 嵌入式播放器
-    QString embedUrl = QString("https://www.youtube.com/embed/%1?autoplay=1").arg(videoId);
-    videoWebView->setUrl(QUrl(embedUrl));
+    // 使用 QTextBrowser 顯示 YouTube 影片連結
+    QString watchUrl = QString("https://www.youtube.com/watch?v=%1").arg(videoId);
+    QString displayHTML = QString(
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<style>"
+        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
+        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
+        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+        "a { color: #1DB954; text-decoration: none; font-size: 20px; font-weight: bold; }"
+        "a:hover { color: #1ED760; text-decoration: underline; }"
+        ".info { font-size: 14px; color: #888; margin: 30px 0; }"
+        "</style>"
+        "</head>"
+        "<body>"
+        "<h2>🎵 YouTube 影片</h2>"
+        "<p>%1</p>"
+        "<p>%2</p>"
+        "<div style='margin: 40px 0;'>"
+        "<a href='%3'>🔗 點擊此處在瀏覽器中播放</a>"
+        "</div>"
+        "<p class='info'>由於不使用 WebEngine，YouTube 影片將在瀏覽器中播放</p>"
+        "</body>"
+        "</html>"
+    ).arg(video.title.toHtmlEscaped())
+     .arg(video.channelTitle.toHtmlEscaped())
+     .arg(watchUrl);
+    
+    videoDisplayArea->setHtml(displayHTML);
     
     // 顯示影片資訊
     videoTitleLabel->setText(video.title);
@@ -588,7 +636,7 @@ void Widget::playLocalFile(const QString& filePath)
         "</html>"
     ).arg(video.title.toHtmlEscaped()).arg(fileInfo.fileName().toHtmlEscaped());
     
-    videoWebView->setHtml(displayHTML);
+    videoDisplayArea->setHtml(displayHTML);
     videoTitleLabel->setText(video.title);
     channelLabel->setText(video.channelTitle);
     
@@ -624,13 +672,12 @@ void Widget::onPlayPauseClicked()
                         playPauseButton->setText("⏸");
                     }
                 } else {
-                    // YouTube 影片，切換播放狀態
-                    // 注意: YouTube 嵌入式播放器無法直接從 Qt 控制
-                    // 用戶需要在視頻播放器內控制播放/暫停
+                    // YouTube 影片，無法直接控制播放
+                    // 顯示提示訊息
                     isPlaying = !isPlaying;
                     playPauseButton->setText(isPlaying ? "⏸" : "▶");
                     QMessageBox::information(this, "提示", 
-                        "YouTube 影片播放控制需要在視頻播放器內操作。\n此按鈕僅顯示播放狀態。");
+                        "YouTube 影片播放需要在瀏覽器中操作。\n請點擊顯示區域的連結在瀏覽器中播放。");
                 }
             }
         }
@@ -893,7 +940,12 @@ void Widget::onDeletePlaylistClicked()
                                     .arg(playlists[currentPlaylistIndex].name),
                                     QMessageBox::Yes | QMessageBox::No);
     if (ret == QMessageBox::Yes) {
-        videoWebView->setHtml("");
+        videoDisplayArea->setHtml(
+            "<div style='text-align: center; padding-top: 100px;'>"
+            "<h2 style='color: #1DB954; font-size: 32px;'>🎵 音樂播放器</h2>"
+            "<p style='color: #B3B3B3; font-size: 18px; margin-top: 20px;'>選擇一首歌曲開始播放</p>"
+            "</div>"
+        );
         currentVideoIndex = -1;
         isPlaying = false;
         playlists.removeAt(currentPlaylistIndex);
@@ -983,16 +1035,42 @@ void Widget::playVideo(int index)
             "</html>"
         ).arg(video.title.toHtmlEscaped()).arg(fileInfo.fileName().toHtmlEscaped());
         
-        videoWebView->setHtml(displayHTML);
+        videoDisplayArea->setHtml(displayHTML);
         isPlaying = true;
         playPauseButton->setText("⏸");
         
         // 啟動 Whisper 轉錄
         startWhisperTranscription(video.filePath);
     } else {
-        // 播放 YouTube 影片
-        QString embedUrl = QString("https://www.youtube.com/embed/%1?autoplay=1").arg(video.videoId);
-        videoWebView->setUrl(QUrl(embedUrl));
+        // 播放 YouTube 影片 - 顯示連結供用戶在瀏覽器中播放
+        QString watchUrl = QString("https://www.youtube.com/watch?v=%1").arg(video.videoId);
+        QString displayHTML = QString(
+            "<!DOCTYPE html>"
+            "<html>"
+            "<head>"
+            "<style>"
+            "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
+            "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
+            "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+            "a { color: #1DB954; text-decoration: none; font-size: 20px; font-weight: bold; }"
+            "a:hover { color: #1ED760; text-decoration: underline; }"
+            ".info { font-size: 14px; color: #888; margin: 30px 0; }"
+            "</style>"
+            "</head>"
+            "<body>"
+            "<h2>🎵 %1</h2>"
+            "<p>%2</p>"
+            "<div style='margin: 40px 0;'>"
+            "<a href='%3'>🔗 點擊此處在瀏覽器中播放</a>"
+            "</div>"
+            "<p class='info'>由於不使用 WebEngine，YouTube 影片將在瀏覽器中播放</p>"
+            "</body>"
+            "</html>"
+        ).arg(video.title.toHtmlEscaped())
+         .arg(video.channelTitle.toHtmlEscaped())
+         .arg(watchUrl);
+        
+        videoDisplayArea->setHtml(displayHTML);
         isPlaying = true;
         playPauseButton->setText("⏸");
         

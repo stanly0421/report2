@@ -22,9 +22,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QWebEngineView>
 #include <QProcess>
 #include <QTextEdit>
+#include <QTextBrowser>
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class Widget;
@@ -110,8 +110,8 @@ private:
     QMediaPlayer* mediaPlayer;
     QAudioOutput* audioOutput;
     
-    // 影片顯示區域 - 使用 WebEngineView 以支援嵌入式播放
-    QWebEngineView* videoWebView;
+    // 影片顯示區域 - 使用 QTextBrowser 以支援 HTML 顯示和連結點擊
+    QTextBrowser* videoDisplayArea;
     
     // Whisper 轉錄
     QProcess* whisperProcess;
