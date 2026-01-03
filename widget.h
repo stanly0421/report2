@@ -22,6 +22,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QWebEngineView>
+#include <QProcess>
+#include <QTextEdit>
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class Widget;
@@ -79,6 +82,10 @@ private slots:
     void onMediaPlayerStateChanged();
     void onMediaPlayerPositionChanged(qint64 position);
     void onMediaPlayerDurationChanged(qint64 duration);
+    
+    // Whisper 輸出
+    void onWhisperOutputReady();
+    void onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
 private:
     void setupUI();
@@ -95,6 +102,7 @@ private:
     void playLocalFile(const QString& filePath);
     QString extractYouTubeVideoId(const QString& url);
     QString createVideoDisplayHTML(const VideoInfo& video);
+    void startWhisperTranscription(const QString& audioFilePath);
 
     Ui::Widget *ui;
     
@@ -102,8 +110,12 @@ private:
     QMediaPlayer* mediaPlayer;
     QAudioOutput* audioOutput;
     
-    // 影片資訊顯示區域
-    QLabel* videoDisplayLabel;
+    // 影片顯示區域 - 使用 WebEngineView 以支援嵌入式播放
+    QWebEngineView* videoWebView;
+    
+    // Whisper 轉錄
+    QProcess* whisperProcess;
+    QTextEdit* subtitleDisplay;
     
     // UI 元件
     QLineEdit* searchEdit;

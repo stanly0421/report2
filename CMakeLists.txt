@@ -17,6 +17,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS
     Widgets
     Multimedia
     MultimediaWidgets
+    WebEngineWidgets
 )
 
 set(PROJECT_SOURCES
@@ -43,6 +44,7 @@ target_link_libraries(last-report PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Multimedia
     Qt${QT_VERSION_MAJOR}::MultimediaWidgets
+    Qt${QT_VERSION_MAJOR}::WebEngineWidgets
 )
 
 # Set target properties
