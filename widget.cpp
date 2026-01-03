@@ -1446,11 +1446,11 @@ void Widget::startWhisperTranscription(const QString& audioFilePath)
     // 清空字幕內容
     currentSubtitles = "";
     
-    // 生成 SRT 輸出檔案路徑
+    // 生成 SRT 輸出檔案路徑（使用跨平台路徑構建）
     QFileInfo audioFileInfo(audioFilePath);
-    QString outputDir = audioFileInfo.absolutePath();
     QString baseName = audioFileInfo.completeBaseName();
-    currentSrtFilePath = outputDir + "/" + baseName + ".srt";
+    QDir outputDir(audioFileInfo.absolutePath());
+    currentSrtFilePath = outputDir.filePath(baseName + ".srt");
     
     // 準備 Vibe CLI 參數
     // vibe <audioFilePath> --output <output.srt>
@@ -1729,13 +1729,20 @@ void Widget::loadSrt(const QString& srtFilePath)
             while (i < lines.size()) {
                 QString textLine = lines[i].trimmed();
                 
-                // 遇到空行或序號行，字幕文字結束
-                if (textLine.isEmpty() || sequenceNumberRegex.match(textLine).hasMatch()) {
+                // 遇到空行，字幕文字結束
+                if (textLine.isEmpty()) {
                     break;
                 }
                 
-                // 遇到時間戳行，字幕文字結束（異常情況）
-                if (srtTimestampRegex.match(textLine).hasMatch()) {
+                // 遇到序號行，字幕文字結束（緩存匹配結果）
+                QRegularExpressionMatch seqMatch = sequenceNumberRegex.match(textLine);
+                if (seqMatch.hasMatch()) {
+                    break;
+                }
+                
+                // 遇到時間戳行，字幕文字結束（異常情況，緩存匹配結果）
+                QRegularExpressionMatch tsMatch = srtTimestampRegex.match(textLine);
+                if (tsMatch.hasMatch()) {
                     break;
                 }
                 
