@@ -12,6 +12,7 @@
 #include <QSplitter>
 #include <QRegularExpression>
 #include <QTextBrowser>
+#include <QTextStream>
 #include <QProcess>
 #include <QDesktopServices>
 #include <QTimer>
