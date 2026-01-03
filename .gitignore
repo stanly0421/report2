@@ -1,0 +1,40 @@
+# Qt build artifacts
+build/
+*.pro.user
+*.pro.user.*
+*.autosave
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.exe
+Makefile*
+*_plugin_import.cpp
+/.qmake.cache
+/.qmake.stash
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qm
+.DS_Store
+.directory
+*.debug
+
+# Qt Creator
+*.creator
+*.creator.user
+*.includes
+
+# Qt temporary files
+*~
+.#*
+*#
+.*.swp
+
+# IDE
+.qtcreator/
+.vscode/
+.idea/
