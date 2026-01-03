@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QDir>
 #include <QStandardPaths>
+#include <QTextStream>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)

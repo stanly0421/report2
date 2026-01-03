@@ -4,18 +4,13 @@
 #include <QWidget>
 #include <QPushButton>
 #include <QLabel>
-#include <QSlider>
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QInputDialog>
 #include <QMessageBox>
-#include <QTime>
-#include <QUrl>
-#include <QMap>
 #include <QList>
-#include <QSet>
 
 
 QT_BEGIN_NAMESPACE
