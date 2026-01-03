@@ -169,6 +169,8 @@ private:
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
     QRegularExpression subtitleTimestampRegex;  // Regex pattern for parsing subtitle timestamps
+    QRegularExpression srtTimestampRegex;  // Regex pattern for parsing SRT timestamp format
+    QRegularExpression sequenceNumberRegex;  // Regex pattern for identifying SRT sequence numbers
     QString currentSubtitles;  // 累積的字幕內容，用於整合顯示在主視窗
 };
 

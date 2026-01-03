@@ -33,6 +33,8 @@ Widget::Widget(QWidget *parent)
     , isPlaying(false)
     , isProgressSliderPressed(false)
     , subtitleTimestampRegex(R"(\[(\d+\.?\d*)s\s*-\s*(\d+\.?\d*)s\])")
+    , srtTimestampRegex(R"((\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3}))")
+    , sequenceNumberRegex(R"(^\d+$)")
     , currentSubtitles("")
 {
     ui->setupUi(this);
@@ -1678,11 +1680,7 @@ void Widget::loadSrt(const QString& srtFilePath)
     QString htmlSubtitles;
     QTextStream stream(&htmlSubtitles);
     
-    // 使用正則表達式解析 SRT
-    // 時間戳格式: 00:00:00,000 --> 00:00:05,230
-    QRegularExpression srtTimestampRegex(R"((\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3}))");
-    QRegularExpression sequenceNumberRegex(R"(^\d+$)");  // 用於識別序號行
-    
+    // 使用類別成員的正則表達式解析 SRT（避免重複編譯）
     QStringList lines = srtContent.split('\n');
     int i = 0;
     
@@ -1695,13 +1693,13 @@ void Widget::loadSrt(const QString& srtFilePath)
             continue;
         }
         
-        // 跳過序號行（純數字）
+        // 跳過序號行（純數字）- 使用類別成員 regex
         if (sequenceNumberRegex.match(line).hasMatch()) {
             i++;
             continue;
         }
         
-        // 檢查是否為時間戳行
+        // 檢查是否為時間戳行 - 使用類別成員 regex
         QRegularExpressionMatch match = srtTimestampRegex.match(line);
         if (match.hasMatch()) {
             // 提取開始時間
