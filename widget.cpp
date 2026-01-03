@@ -86,6 +86,9 @@ Widget::Widget(QWidget *parent)
         updatePlaylistDisplay();
     }
     
+    // 更新目標播放清單下拉選單
+    updateTargetPlaylistComboBox();
+    
     // 更新按鈕狀態
     updateButtonStates();
 }
@@ -428,8 +431,9 @@ void Widget::setupUI()
     );
     controlLayout->addWidget(volumeSlider);
     
-    toggleFavoriteButton = new QPushButton("❤️ 加入播放清單", controlWidget);
-    toggleFavoriteButton->setStyleSheet(
+    // 加入播放清單功能
+    addToPlaylistButton = new QPushButton("➕ 加入播放清單", controlWidget);
+    addToPlaylistButton->setStyleSheet(
         "QPushButton {"
         "   background-color: #282828;"
         "   color: #B3B3B3;"
@@ -441,8 +445,30 @@ void Widget::setupUI()
         "QPushButton:hover { background-color: #404040; color: #FFFFFF; }"
         "QPushButton:disabled { background-color: #181818; color: #404040; }"
     );
-    toggleFavoriteButton->setEnabled(false);
-    controlLayout->addWidget(toggleFavoriteButton);
+    addToPlaylistButton->setEnabled(false);
+    controlLayout->addWidget(addToPlaylistButton);
+    
+    targetPlaylistComboBox = new QComboBox(controlWidget);
+    targetPlaylistComboBox->setStyleSheet(
+        "QComboBox {"
+        "   background-color: #282828;"
+        "   border: 1px solid #404040;"
+        "   border-radius: 4px;"
+        "   padding: 8px;"
+        "   color: #FFFFFF;"
+        "   min-width: 100px;"
+        "}"
+        "QComboBox::drop-down {"
+        "   border: none;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "   background-color: #282828;"
+        "   color: #FFFFFF;"
+        "   selection-background-color: #1DB954;"
+        "}"
+    );
+    targetPlaylistComboBox->setEnabled(false);
+    controlLayout->addWidget(targetPlaylistComboBox);
     
     centerLayout->addWidget(controlWidget);
     
@@ -472,8 +498,8 @@ void Widget::createConnections()
     connect(playlistWidget, &QListWidget::itemSelectionChanged, this, &Widget::updateButtonStates);
     connect(playlistWidget, &QListWidget::customContextMenuRequested, this, &Widget::onPlaylistContextMenu);
     
-    // 最愛按鈕
-    connect(toggleFavoriteButton, &QPushButton::clicked, this, &Widget::onToggleFavoriteClicked);
+    // 加入播放清單按鈕
+    connect(addToPlaylistButton, &QPushButton::clicked, this, &Widget::onAddToPlaylistClicked);
     
     // 播放清單選擇
     connect(newPlaylistButton, &QPushButton::clicked, this, &Widget::onNewPlaylistClicked);
@@ -900,89 +926,67 @@ void Widget::onVideoDoubleClicked(QListWidgetItem* item)
     playVideo(index);
 }
 
-void Widget::onToggleFavoriteClicked()
+void Widget::onAddToPlaylistClicked()
 {
-    toggleFavoriteForVideo(currentVideoIndex);
-}
-
-void Widget::toggleFavoriteForVideo(int videoIndex)
-{
-    if (videoIndex < 0 || currentPlaylistIndex < 0) return;
+    if (currentVideoIndex < 0 || currentPlaylistIndex < 0) return;
     if (currentPlaylistIndex >= playlists.size()) return;
     
     Playlist& currentPlaylist = playlists[currentPlaylistIndex];
-    if (videoIndex >= currentPlaylist.videos.size()) return;
+    if (currentVideoIndex >= currentPlaylist.videos.size()) return;
     
-    VideoInfo& video = currentPlaylist.videos[videoIndex];
+    VideoInfo& video = currentPlaylist.videos[currentVideoIndex];
     
-    // 找到 "我的最愛" 播放清單
-    int favoritesIndex = -1;
+    // 獲取目標播放清單索引
+    int targetComboIndex = targetPlaylistComboBox->currentIndex();
+    if (targetComboIndex < 0) return;
+    
+    // 找到目標播放清單的實際索引（跳過當前播放清單）
+    int targetPlaylistIndex = -1;
+    int comboCounter = 0;
     for (int i = 0; i < playlists.size(); i++) {
-        if (playlists[i].name == "我的最愛") {
-            favoritesIndex = i;
-            break;
+        if (i != currentPlaylistIndex) {
+            if (comboCounter == targetComboIndex) {
+                targetPlaylistIndex = i;
+                break;
+            }
+            comboCounter++;
         }
     }
     
-    if (favoritesIndex < 0) {
-        // 創建 "我的最愛" 播放清單
-        Playlist favoritesPlaylist;
-        favoritesPlaylist.name = "我的最愛";
-        playlists.append(favoritesPlaylist);
-        playlistComboBox->addItem(favoritesPlaylist.name);
-        favoritesIndex = playlists.size() - 1;
-    }
+    if (targetPlaylistIndex < 0 || targetPlaylistIndex >= playlists.size()) return;
     
-    Playlist& favoritesPlaylist = playlists[favoritesIndex];
+    Playlist& targetPlaylist = playlists[targetPlaylistIndex];
     
-    // 檢查是否已在最愛中
-    bool isInFavorites = false;
-    int favoriteIndex = -1;
-    for (int i = 0; i < favoritesPlaylist.videos.size(); i++) {
-        const VideoInfo& favVideo = favoritesPlaylist.videos[i];
-        // 對於本地檔案比較 filePath，對於 YouTube 影片比較 videoId
+    // 檢查是否已存在於目標播放清單中
+    bool alreadyExists = false;
+    for (const VideoInfo& existingVideo : targetPlaylist.videos) {
         bool isSameVideo = false;
-        if (video.isLocalFile && favVideo.isLocalFile) {
-            isSameVideo = (favVideo.filePath == video.filePath);
-        } else if (!video.isLocalFile && !favVideo.isLocalFile) {
-            isSameVideo = (favVideo.videoId == video.videoId);
+        if (video.isLocalFile && existingVideo.isLocalFile) {
+            isSameVideo = (existingVideo.filePath == video.filePath);
+        } else if (!video.isLocalFile && !existingVideo.isLocalFile) {
+            isSameVideo = (existingVideo.videoId == video.videoId);
         }
         
         if (isSameVideo) {
-            isInFavorites = true;
-            favoriteIndex = i;
+            alreadyExists = true;
             break;
         }
     }
     
-    if (isInFavorites) {
-        // 從最愛移除
-        favoritesPlaylist.videos.removeAt(favoriteIndex);
-        video.isFavorite = false;
-        if (videoIndex == currentVideoIndex) {
-            // 根據當前播放清單設置按鈕文字
-            if (currentPlaylist.name == "我的最愛") {
-                // 如果在最愛播放清單中，移除後按鈕還是顯示"移除最愛"
-                toggleFavoriteButton->setText("💔 移除最愛");
-            } else {
-                toggleFavoriteButton->setText("❤️ 加入最愛");
-            }
-        }
-        QMessageBox::information(this, "我的最愛", "已從最愛中移除！");
+    if (alreadyExists) {
+        QMessageBox::information(this, "加入播放清單", 
+            QString("「%1」已存在於播放清單「%2」中！")
+            .arg(video.title)
+            .arg(targetPlaylist.name));
     } else {
-        // 加入最愛
-        VideoInfo favoriteVideo = video;
-        favoriteVideo.isFavorite = true;
-        favoritesPlaylist.videos.append(favoriteVideo);
-        video.isFavorite = true;
-        if (videoIndex == currentVideoIndex) {
-            toggleFavoriteButton->setText("💔 移除最愛");
-        }
-        QMessageBox::information(this, "我的最愛", "已加入最愛！");
+        // 加入目標播放清單
+        targetPlaylist.videos.append(video);
+        savePlaylistsToFile();
+        QMessageBox::information(this, "加入播放清單", 
+            QString("已將「%1」加入到播放清單「%2」！")
+            .arg(video.title)
+            .arg(targetPlaylist.name));
     }
-    
-    updatePlaylistDisplay();
-    savePlaylistsToFile();
 }
 
 void Widget::onNewPlaylistClicked()
@@ -1010,6 +1014,7 @@ void Widget::onNewPlaylistClicked()
         currentPlaylistIndex = newIndex;
         lastPlaylistName = name;
         updatePlaylistDisplay();
+        updateTargetPlaylistComboBox();
         updateButtonStates();
     }
 }
@@ -1044,14 +1049,26 @@ void Widget::onPlaylistChanged(int index)
     currentVideoIndex = -1;
     playedVideosInCurrentSession.clear();
     updatePlaylistDisplay();
+    updateTargetPlaylistComboBox();
     updateButtonStates();
+}
+}
+
+void Widget::updateTargetPlaylistComboBox()
+{
+    targetPlaylistComboBox->clear();
     
-    // 更新最愛按鈕文字
-    if (playlists[index].name == "我的最愛") {
-        toggleFavoriteButton->setText("💔 移除最愛");
-    } else {
-        toggleFavoriteButton->setText("❤️ 加入最愛");
+    // 添加所有播放清單，除了當前播放清單
+    for (int i = 0; i < playlists.size(); i++) {
+        if (i != currentPlaylistIndex) {
+            targetPlaylistComboBox->addItem(playlists[i].name);
+        }
     }
+    
+    // 如果有可選的播放清單，啟用按鈕和下拉選單
+    bool hasTargetPlaylists = (targetPlaylistComboBox->count() > 0);
+    targetPlaylistComboBox->setEnabled(hasTargetPlaylists && currentVideoIndex >= 0);
+    addToPlaylistButton->setEnabled(hasTargetPlaylists && currentVideoIndex >= 0);
 }
 
 void Widget::updatePlaylistDisplay()
@@ -1124,39 +1141,6 @@ void Widget::playVideo(int index)
     // 更新顯示
     updateVideoLabels(video);
     
-    // 更新最愛按鈕 - 根據當前播放清單設置按鈕文字
-    if (currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.size()) {
-        if (playlists[currentPlaylistIndex].name == "我的最愛") {
-            toggleFavoriteButton->setText("💔 移除最愛");
-        } else {
-            // 檢查這首歌是否已在最愛中
-            bool isInFavorites = false;
-            for (int i = 0; i < playlists.size(); i++) {
-                if (playlists[i].name == "我的最愛") {
-                    for (const VideoInfo& favVideo : playlists[i].videos) {
-                        bool isSameVideo = false;
-                        if (video.isLocalFile && favVideo.isLocalFile) {
-                            isSameVideo = (favVideo.filePath == video.filePath);
-                        } else if (!video.isLocalFile && !favVideo.isLocalFile) {
-                            isSameVideo = (favVideo.videoId == video.videoId);
-                        }
-                        if (isSameVideo) {
-                            isInFavorites = true;
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-            
-            if (isInFavorites) {
-                toggleFavoriteButton->setText("💔 移除最愛");
-            } else {
-                toggleFavoriteButton->setText("❤️ 加入最愛");
-            }
-        }
-    }
-    
     updatePlaylistDisplay();
     updateButtonStates();
     
@@ -1175,7 +1159,11 @@ void Widget::updateButtonStates()
     previousButton->setEnabled(hasVideos);
     nextButton->setEnabled(hasVideos);
     deletePlaylistButton->setEnabled(playlists.size() > 1);
-    toggleFavoriteButton->setEnabled(hasMediaPlaying);
+    
+    // 更新加入播放清單按鈕狀態
+    bool hasTargetPlaylists = (targetPlaylistComboBox->count() > 0);
+    addToPlaylistButton->setEnabled(hasMediaPlaying && hasTargetPlaylists);
+    targetPlaylistComboBox->setEnabled(hasMediaPlaying && hasTargetPlaylists);
 }
 
 void Widget::savePlaylistsToFile()
@@ -1704,7 +1692,6 @@ void Widget::onPlaylistContextMenu(const QPoint& pos)
     
     QAction* playAction = contextMenu.addAction("▶ 播放");
     QAction* deleteAction = contextMenu.addAction("🗑️ 從播放清單移除");
-    QAction* addToFavAction = contextMenu.addAction("❤️ 加入最愛");
     
     QAction* selectedAction = contextMenu.exec(playlistWidget->mapToGlobal(pos));
     
@@ -1714,9 +1701,6 @@ void Widget::onPlaylistContextMenu(const QPoint& pos)
         // 確保選中要刪除的項目
         playlistWidget->setCurrentRow(itemRow);
         onDeleteFromPlaylist();
-    } else if (selectedAction == addToFavAction) {
-        // 使用新的方法來加入最愛
-        toggleFavoriteForVideo(itemRow);
     }
 }
 
