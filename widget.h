@@ -119,6 +119,8 @@ private:
     void updateVideoLabels(const VideoInfo& video);
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
+    void loadSrt(const QString& srtFilePath);
+    void updateSubtitleDisplay();  // Helper to update subtitle display for current video
     void restoreCurrentVideoTitle();
     void updateLocalMusicDisplay(const QString& title, const QString& fileName, const QString& subtitles);
 
@@ -133,6 +135,7 @@ private:
     
     // Whisper 轉錄
     QProcess* whisperProcess;
+    QString currentSrtFilePath;  // 當前 SRT 檔案路徑
     
     // UI 元件
     QPushButton* loadLocalFileButton;
@@ -166,6 +169,8 @@ private:
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
     QRegularExpression subtitleTimestampRegex;  // Regex pattern for parsing subtitle timestamps
+    QRegularExpression srtTimestampRegex;  // Regex pattern for parsing SRT timestamp format
+    QRegularExpression sequenceNumberRegex;  // Regex pattern for identifying SRT sequence numbers
     QString currentSubtitles;  // 累積的字幕內容，用於整合顯示在主視窗
 };
 

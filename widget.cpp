@@ -33,6 +33,8 @@ Widget::Widget(QWidget *parent)
     , isPlaying(false)
     , isProgressSliderPressed(false)
     , subtitleTimestampRegex(R"(\[(\d+\.?\d*)s\s*-\s*(\d+\.?\d*)s\])")
+    , srtTimestampRegex(R"((\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3}))")
+    , sequenceNumberRegex(R"(^\d+$)")
     , currentSubtitles("")
 {
     ui->setupUi(this);
@@ -1435,7 +1437,7 @@ QString Widget::createVideoDisplayHTML(const VideoInfo& video)
 
 void Widget::startWhisperTranscription(const QString& audioFilePath)
 {
-    // 停止現有的 Whisper 處理程序
+    // 停止現有的 Whisper/Vibe 處理程序
     if (whisperProcess->state() != QProcess::NotRunning) {
         whisperProcess->kill();
         whisperProcess->waitForFinished();
@@ -1444,72 +1446,28 @@ void Widget::startWhisperTranscription(const QString& audioFilePath)
     // 清空字幕內容
     currentSubtitles = "";
     
-    // 檢查 Whisper 腳本是否存在
-    QString whisperScript = "whisper_transcribe.py";
-    QFileInfo scriptInfo(whisperScript);
+    // 生成 SRT 輸出檔案路徑（使用跨平台路徑構建）
+    QFileInfo audioFileInfo(audioFilePath);
+    QString baseName = audioFileInfo.completeBaseName();
+    QDir outputDir(audioFileInfo.absolutePath());
+    currentSrtFilePath = outputDir.filePath(baseName + ".srt");
     
-    if (!scriptInfo.exists()) {
-        currentSubtitles = "<p style='color: #888;'>注意: whisper_transcribe.py 腳本不存在</p>"
-                          "<p style='color: #888;'>請確保已安裝 Whisper 並創建轉錄腳本</p>";
-        return;
-    }
-    
-    // 啟動 Whisper 處理程序
+    // 準備 Vibe CLI 參數
+    // vibe <audioFilePath> --output <output.srt>
     QStringList arguments;
-    arguments << whisperScript << audioFilePath;
+    arguments << audioFilePath << "--output" << currentSrtFilePath;
     
-    whisperProcess->start("python3", arguments);
+    // 啟動 Vibe 處理程序
+    whisperProcess->start("vibe", arguments);
     
     if (!whisperProcess->waitForStarted(3000)) {
-        currentSubtitles = "<p style='color: #888;'>錯誤: 無法啟動 Whisper 處理程序</p>"
-                          "<p style='color: #888;'>請確保已安裝 Python 和 Whisper</p>";
-    }
-}
-
-void Widget::onWhisperOutputReady()
-{
-    // 讀取 Whisper 的標準輸出
-    QByteArray output = whisperProcess->readAllStandardOutput();
-    QString text = QString::fromUtf8(output).trimmed();
-    
-    if (!text.isEmpty()) {
-        // 解析時間戳格式: [start - end] text
-        // 例如: [0.00s - 5.23s] 這是一段文字
-        
-        QString htmlText;
-        QTextStream stream(&htmlText);
-        
-        QStringList lines = text.split('\n');
-        for (const QString& line : lines) {
-            if (line.isEmpty()) continue;
-            
-            QRegularExpressionMatch match = subtitleTimestampRegex.match(line);
-            if (match.hasMatch()) {
-                // 找到時間戳
-                QString startTime = match.captured(1);
-                QString endTime = match.captured(2);
-                QString timestamp = match.captured(0);  // 完整的時間戳字串
-                
-                // 獲取文字內容（時間戳後的部分）
-                int timestampEnd = match.capturedEnd();
-                QString content = line.mid(timestampEnd).trimmed();
-                
-                // 創建可點擊的連結，使用 start 時間作為跳轉目標
-                QString clickableTimestamp = QString("<a href=\"#%1\">%2</a>")
-                    .arg(startTime)
-                    .arg(timestamp);
-                
-                stream << "<p>" << clickableTimestamp << " " << content.toHtmlEscaped() << "</p>";
-            } else {
-                // 沒有時間戳的一般文字
-                stream << "<p>" << line.toHtmlEscaped() << "</p>";
-            }
-        }
-        
-        // 累積字幕內容
-        currentSubtitles += htmlText;
-        
-        // 更新顯示（如果當前正在播放本地檔案）
+        currentSubtitles = "<p style='color: #888;'>錯誤: 無法啟動 Vibe CLI</p>"
+                          "<p style='color: #888;'>請確保已安裝 Vibe (Whisper CLI)</p>"
+                          "<p style='color: #888;'>提示: 可使用 pip install whisper-ctranslate2 或其他 Whisper CLI 工具</p>";
+    } else {
+        currentSubtitles = "<p style='color: #1DB954;'>正在使用 Vibe 進行語音轉錄...</p>"
+                          "<p style='color: #888;'>請稍候，轉錄完成後字幕將自動顯示</p>";
+        // 更新顯示
         if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
             currentPlaylistIndex < playlists.size()) {
             const Playlist& playlist = playlists[currentPlaylistIndex];
@@ -1521,6 +1479,23 @@ void Widget::onWhisperOutputReady()
                 }
             }
         }
+    }
+}
+
+void Widget::onWhisperOutputReady()
+{
+    // 讀取 Vibe CLI 的標準輸出（進度訊息等）
+    QByteArray output = whisperProcess->readAllStandardOutput();
+    QString text = QString::fromUtf8(output).trimmed();
+    
+    if (!text.isEmpty()) {
+        // Vibe 可能輸出進度訊息，我們可以顯示它們
+        // 但主要的字幕內容會在完成後從 SRT 檔案載入
+        QString htmlText = "<p style='color: #B3B3B3;'>" + text.toHtmlEscaped() + "</p>";
+        currentSubtitles += htmlText;
+        
+        // 更新顯示（如果當前正在播放本地檔案）
+        updateSubtitleDisplay();
     }
 }
 
@@ -1648,26 +1623,9 @@ void Widget::restoreCurrentVideoTitle()
     }
 }
 
-void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
+void Widget::updateSubtitleDisplay()
 {
-    QString finishMessage;
-    if (exitStatus == QProcess::CrashExit) {
-        finishMessage = "<p style='color: #888;'>[轉錄處理程序異常終止]</p>";
-    } else if (exitCode != 0) {
-        finishMessage = QString("<p style='color: #888;'>[轉錄處理程序結束，退出碼: %1]</p>").arg(exitCode);
-        
-        // 讀取錯誤輸出
-        QByteArray errorOutput = whisperProcess->readAllStandardError();
-        if (!errorOutput.isEmpty()) {
-            finishMessage += "<p style='color: #888;'>錯誤信息: " + QString::fromUtf8(errorOutput).toHtmlEscaped() + "</p>";
-        }
-    } else {
-        finishMessage = "<p style='color: #888;'>[轉錄完成]</p>";
-    }
-    
-    currentSubtitles += finishMessage;
-    
-    // 更新顯示
+    // Helper function to update subtitle display for current playing video
     if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
         currentPlaylistIndex < playlists.size()) {
         const Playlist& playlist = playlists[currentPlaylistIndex];
@@ -1680,6 +1638,167 @@ void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
         }
     }
 }
+
+void Widget::loadSrt(const QString& srtFilePath)
+{
+    // 檢查 SRT 檔案是否存在
+    QFileInfo srtFileInfo(srtFilePath);
+    if (!srtFileInfo.exists()) {
+        currentSubtitles += "<p style='color: #888;'>錯誤: 找不到 SRT 檔案: " + srtFilePath.toHtmlEscaped() + "</p>";
+        updateSubtitleDisplay();
+        return;
+    }
+    
+    // 讀取 SRT 檔案
+    QFile srtFile(srtFilePath);
+    if (!srtFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        currentSubtitles += "<p style='color: #888;'>錯誤: 無法開啟 SRT 檔案</p>";
+        updateSubtitleDisplay();
+        return;
+    }
+    
+    QTextStream in(&srtFile);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    in.setEncoding(QStringConverter::Utf8);
+#else
+    in.setCodec("UTF-8");
+#endif
+    
+    QString srtContent = in.readAll();
+    srtFile.close();
+    
+    // 解析 SRT 格式並轉換為可點擊的 HTML
+    // SRT 格式：
+    // 1
+    // 00:00:00,000 --> 00:00:05,230
+    // 這是一段文字
+    //
+    // 2
+    // 00:00:05,230 --> 00:00:10,000
+    // 這是另一段文字
+    
+    QString htmlSubtitles;
+    QTextStream stream(&htmlSubtitles);
+    
+    // 使用類別成員的正則表達式解析 SRT（避免重複編譯）
+    QStringList lines = srtContent.split('\n');
+    int i = 0;
+    
+    while (i < lines.size()) {
+        QString line = lines[i].trimmed();
+        
+        // 跳過空行
+        if (line.isEmpty()) {
+            i++;
+            continue;
+        }
+        
+        // 跳過序號行（純數字）- 使用類別成員 regex
+        if (sequenceNumberRegex.match(line).hasMatch()) {
+            i++;
+            continue;
+        }
+        
+        // 檢查是否為時間戳行 - 使用類別成員 regex
+        QRegularExpressionMatch match = srtTimestampRegex.match(line);
+        if (match.hasMatch()) {
+            // 提取開始時間
+            int startHour = match.captured(1).toInt();
+            int startMin = match.captured(2).toInt();
+            int startSec = match.captured(3).toInt();
+            int startMs = match.captured(4).toInt();
+            
+            // 提取結束時間
+            int endHour = match.captured(5).toInt();
+            int endMin = match.captured(6).toInt();
+            int endSec = match.captured(7).toInt();
+            int endMs = match.captured(8).toInt();
+            
+            // 計算以秒為單位的時間
+            double startTime = startHour * 3600 + startMin * 60 + startSec + startMs / 1000.0;
+            double endTime = endHour * 3600 + endMin * 60 + endSec + endMs / 1000.0;
+            
+            // 格式化時間戳顯示
+            QString timestamp = QString("[%1s - %2s]")
+                .arg(startTime, 0, 'f', 2)
+                .arg(endTime, 0, 'f', 2);
+            
+            // 讀取字幕文字（可能有多行）
+            i++;
+            QString subtitleText;
+            while (i < lines.size()) {
+                QString textLine = lines[i].trimmed();
+                
+                // 遇到空行，字幕文字結束
+                if (textLine.isEmpty()) {
+                    break;
+                }
+                
+                // 遇到序號行，字幕文字結束（緩存匹配結果）
+                QRegularExpressionMatch seqMatch = sequenceNumberRegex.match(textLine);
+                if (seqMatch.hasMatch()) {
+                    break;
+                }
+                
+                // 遇到時間戳行，字幕文字結束（異常情況，緩存匹配結果）
+                QRegularExpressionMatch tsMatch = srtTimestampRegex.match(textLine);
+                if (tsMatch.hasMatch()) {
+                    break;
+                }
+                
+                if (!subtitleText.isEmpty()) {
+                    subtitleText += " ";
+                }
+                subtitleText += textLine;
+                i++;
+            }
+            
+            // 創建可點擊的連結
+            QString clickableTimestamp = QString("<a href=\"#%1\">%2</a>")
+                .arg(startTime)
+                .arg(timestamp);
+            
+            stream << "<p>" << clickableTimestamp << " " << subtitleText.toHtmlEscaped() << "</p>";
+        } else {
+            i++;
+        }
+    }
+    
+    // 清空之前的字幕並設置新的字幕
+    currentSubtitles = htmlSubtitles;
+    
+    // 更新顯示
+    updateSubtitleDisplay();
+}
+
+void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    QString finishMessage;
+    if (exitStatus == QProcess::CrashExit) {
+        finishMessage = "<p style='color: #888;'>[Vibe 轉錄處理程序異常終止]</p>";
+    } else if (exitCode != 0) {
+        finishMessage = QString("<p style='color: #888;'>[Vibe 轉錄處理程序結束，退出碼: %1]</p>").arg(exitCode);
+        
+        // 讀取錯誤輸出
+        QByteArray errorOutput = whisperProcess->readAllStandardError();
+        if (!errorOutput.isEmpty()) {
+            finishMessage += "<p style='color: #888;'>錯誤信息: " + QString::fromUtf8(errorOutput).toHtmlEscaped() + "</p>";
+        }
+        
+        currentSubtitles += finishMessage;
+        
+        // 更新顯示錯誤信息
+        updateSubtitleDisplay();
+    } else {
+        // 轉錄成功完成，載入 SRT 檔案
+        finishMessage = "<p style='color: #1DB954;'>[Vibe 轉錄完成，正在載入字幕...]</p>";
+        currentSubtitles += finishMessage;
+        
+        // 載入生成的 SRT 檔案
+        loadSrt(currentSrtFilePath);
+    }
+}
+
 
 void Widget::onPlaylistContextMenu(const QPoint& pos)
 {

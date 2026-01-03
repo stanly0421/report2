@@ -92,11 +92,12 @@
 - **拖放排序**: 用滑鼠拖動歌曲可重新排列播放順序
 - **加入播放清單**: 使用右下角的「➕ 加入播放清單」按鈕和下拉選單，將正在播放的歌曲加入到其他播放清單
 
-### 語音轉錄 (Whisper)
+### 語音轉錄 (Whisper/Vibe)
 - 播放本地音樂時自動啟動轉錄
-- 即時顯示語音轉文字結果，帶時間戳
+- **直接呼叫 Vibe CLI**: Qt 使用 QProcess 直接呼叫 `vibe` 命令列工具
+- 自動生成 SRT 字幕檔案並載入顯示
 - **點擊時間戳可跳轉**: 點擊字幕中的時間範圍可直接跳到該時間點播放
-- 需要安裝 Python 和 Whisper 模組
+- 需要安裝 Vibe (Whisper CLI 工具)
 
 ## 編譯和運行
 
@@ -105,7 +106,7 @@
 - Qt Multimedia 模組
 - C++17 編譯器
 - 穩定的網路連線（播放 YouTube 影片時）
-- Python 3.x 和 Whisper（選用，用於語音轉錄）
+- Vibe CLI（選用，用於語音轉錄）
 
 **注意**: 本專案不再需要 Qt WebEngineWidgets 模組，可以在任何標準 Qt 安裝中運行。
 
@@ -120,9 +121,15 @@ sudo apt-get install qt6-base-dev qt6-multimedia-dev
 # 或安裝 Qt 5 (如果使用 Qt 5)
 sudo apt-get install qtbase5-dev qtmultimedia5-dev
 
-# 安裝 Python 和 Whisper (選用)
+# 安裝 Vibe (Whisper CLI) (選用)
+# 方法 1: 使用 whisper-ctranslate2 (推薦，更快速)
+pip3 install whisper-ctranslate2
+# 安裝後可使用 'whisper-ctranslate2' 命令，需建立 'vibe' 別名或符號連結
+
+# 方法 2: 使用官方 openai-whisper
 sudo apt-get install python3 python3-pip ffmpeg
 pip3 install openai-whisper
+# 可建立名為 'vibe' 的包裝腳本來呼叫 whisper CLI
 ```
 
 #### Fedora/RHEL/CentOS
@@ -133,9 +140,10 @@ sudo dnf install qt6-qtbase-devel qt6-qtmultimedia-devel
 # 或 Qt 5
 sudo dnf install qt5-qtbase-devel qt5-qtmultimedia-devel
 
-# 安裝 Python 和 Whisper (選用)
+# 安裝 Vibe (Whisper CLI) (選用)
 sudo dnf install python3 python3-pip ffmpeg
-pip3 install openai-whisper
+pip3 install whisper-ctranslate2
+# 或: pip3 install openai-whisper
 ```
 
 #### macOS (使用 Homebrew)
@@ -143,19 +151,21 @@ pip3 install openai-whisper
 brew install qt@6
 # 或 brew install qt@5
 
-# 安裝 Python 和 Whisper (選用)
+# 安裝 Vibe (Whisper CLI) (選用)
 brew install python ffmpeg
-pip3 install openai-whisper
+pip3 install whisper-ctranslate2
+# 或: pip3 install openai-whisper
 ```
 
 #### Windows
 1. 下載並安裝 Qt from [qt.io](https://www.qt.io/download)
 2. 在安裝時確保選擇以下組件：
    - Qt Multimedia
-3. (選用) 安裝 Python 和 Whisper：
+3. (選用) 安裝 Vibe (Whisper CLI)：
    - 下載 Python from [python.org](https://www.python.org)
    - 下載 FFmpeg from [ffmpeg.org](https://ffmpeg.org)
-   - 執行: `pip install openai-whisper`
+   - 執行: `pip install whisper-ctranslate2` 或 `pip install openai-whisper`
+   - 確保 `vibe` 命令可在命令列中執行
 
 ### 編譯
 
@@ -189,12 +199,26 @@ cmake --build .
 - **QMediaPlayer**: 本地音樂播放器
 - **QAudioOutput**: 音訊輸出控制
 - **QTextBrowser**: HTML 內容顯示和連結開啟
-- **QProcess**: 執行 Whisper 語音轉錄腳本
+- **QProcess**: 執行 Vibe CLI 語音轉錄工具
 - **QFileDialog**: 檔案選擇對話框
 - **QListWidget**: 顯示播放清單（支援拖放排序）
 - **QComboBox**: 播放清單選擇器
-- **QRegularExpression**: YouTube 連結解析
+- **QRegularExpression**: YouTube 連結解析和 SRT 字幕解析
 - **QDesktopServices**: 在瀏覽器中開啟 YouTube 連結
+
+### Vibe CLI 整合 (Whisper 語音轉錄)
+- **直接呼叫 CLI**: Qt 使用 QProcess 直接啟動 `vibe` 命令列工具
+- **命令格式**: `vibe <audioFilePath> --output <output.srt>`
+- **自動流程**: 
+  1. 播放音樂時，Qt 自動呼叫 Vibe CLI
+  2. Vibe 在背景處理語音轉錄
+  3. 生成 SRT 字幕檔案（與音訊檔案同名）
+  4. Qt 監聽 QProcess 完成信號
+  5. 自動載入並解析 SRT 檔案
+  6. 顯示可點擊的字幕時間戳
+- **SRT 解析**: 使用正則表達式解析 SRT 時間戳格式（HH:MM:SS,mmm）
+- **互動功能**: 點擊字幕時間戳可跳轉到對應播放位置
+- **錯誤處理**: 優雅處理 Vibe 未安裝或轉錄失敗的情況
 
 ### YouTube 連結處理
 - 使用正則表達式解析 YouTube URL
@@ -240,18 +264,28 @@ cmake --build .
 - 支援常見音訊格式
 - 檔案路徑會被儲存在播放清單中
 - 確保音樂檔案位置不會移動
-- 支援 Whisper 語音轉錄（需額外安裝）
+- 支援 Vibe CLI 語音轉錄（需額外安裝）
 - 播放進度條會即時更新顯示當前播放位置和總時長
 
-### Whisper 語音轉錄與字幕功能
-- 需要安裝 Python 3.x 和 openai-whisper 模組
-- 需要安裝 FFmpeg
-- 轉錄過程可能需要較長時間（取決於音頻長度）
-- 轉錄結果會即時顯示在字幕區域，帶有時間戳
+### Vibe CLI 語音轉錄與字幕功能
+- **使用 Vibe CLI**: 直接呼叫 `vibe` 命令列工具，無需 Python 腳本
+- **安裝要求**: 需要安裝 Vibe (如 whisper-ctranslate2 或 openai-whisper 的 CLI 工具)
+- **自動化流程**: 
+  - 播放音樂 → Qt 自動呼叫 Vibe → Vibe 生成 SRT 字幕檔 → Qt 自動載入顯示
+- **SRT 格式**: 生成的字幕檔案為標準 SRT 格式，可用於其他播放器
+- **檔案位置**: SRT 檔案與音訊檔案儲存在同一目錄，使用相同檔名
+- **轉錄時間**: 轉錄過程可能需要較長時間（取決於音頻長度和使用的模型）
 - **互動功能**: 點擊字幕中的時間戳（如 [0.00s - 5.23s]）可跳轉到該時間點
-- 字幕區域會自動滾動顯示最新內容
+- **進度顯示**: 可顯示 Vibe CLI 的進度訊息（如果有輸出）
 
-## 最新改進（v2.1）
+## 最新改進（v2.2）
+
+- ✅ **直接整合 Vibe CLI**: 使用 QProcess 直接呼叫 `vibe` 命令，移除對 Python 腳本的依賴
+- ✅ **SRT 字幕支援**: 自動生成和載入 SRT 格式字幕檔案
+- ✅ **智能檔案管理**: SRT 檔案與音訊檔案同名同位置，便於管理
+- ✅ **優雅的錯誤處理**: 當 Vibe 未安裝時顯示友善的提示訊息
+
+## 之前的改進（v2.1）
 
 - ✅ 將「加入最愛」按鈕改為「加入播放清單」功能
 - ✅ 添加目標播放清單下拉選單，可選擇要加入的播放清單
