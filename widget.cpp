@@ -11,12 +11,17 @@
 #include <QStandardPaths>
 #include <QSplitter>
 #include <QRegularExpression>
+#include <QWebEngineView>
+#include <QProcess>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
     , mediaPlayer(new QMediaPlayer(this))
     , audioOutput(new QAudioOutput(this))
+    , videoWebView(nullptr)
+    , whisperProcess(new QProcess(this))
+    , subtitleDisplay(nullptr)
     , currentPlaylistIndex(-1)
     , currentVideoIndex(-1)
     , isShuffleMode(false)
@@ -248,6 +253,8 @@ void Widget::setupUI()
     leftLayout->addLayout(playlistButtonLayout);
     
     playlistWidget = new QListWidget(leftPanel);
+    playlistWidget->setDragDropMode(QAbstractItemView::InternalMove);
+    playlistWidget->setDefaultDropAction(Qt::MoveAction);
     leftLayout->addWidget(playlistWidget);
     
     contentSplitter->addWidget(leftPanel);
@@ -269,21 +276,31 @@ void Widget::setupUI()
     channelLabel->setStyleSheet("font-size: 14px; color: #B3B3B3;");
     centerLayout->addWidget(channelLabel);
     
-    // 影片資訊顯示區域
-    videoDisplayLabel = new QLabel("", centerPanel);
-    videoDisplayLabel->setMinimumHeight(400);
-    videoDisplayLabel->setStyleSheet(
+    // 影片顯示區域 - 使用 WebEngineView 支援嵌入式 YouTube 播放
+    videoWebView = new QWebEngineView(centerPanel);
+    videoWebView->setMinimumHeight(400);
+    videoWebView->setStyleSheet(
         "background-color: #000000;"
-        "color: #B3B3B3;"
-        "font-size: 16px;"
-        "padding: 20px;"
         "border-radius: 8px;"
     );
-    videoDisplayLabel->setAlignment(Qt::AlignCenter);
-    videoDisplayLabel->setWordWrap(true);
-    videoDisplayLabel->setTextFormat(Qt::RichText);
-    videoDisplayLabel->setOpenExternalLinks(true);
-    centerLayout->addWidget(videoDisplayLabel, 1);
+    centerLayout->addWidget(videoWebView, 1);
+    
+    // 字幕顯示區域
+    subtitleDisplay = new QTextEdit(centerPanel);
+    subtitleDisplay->setReadOnly(true);
+    subtitleDisplay->setMaximumHeight(100);
+    subtitleDisplay->setStyleSheet(
+        "QTextEdit {"
+        "   background-color: #181818;"
+        "   color: #FFFFFF;"
+        "   font-size: 14px;"
+        "   padding: 10px;"
+        "   border-radius: 8px;"
+        "   border: 1px solid #282828;"
+        "}"
+    );
+    subtitleDisplay->setPlaceholderText("字幕將在播放時顯示...");
+    centerLayout->addWidget(subtitleDisplay);
     
     // 播放控制區域
     QWidget* controlWidget = new QWidget(centerPanel);
@@ -404,6 +421,34 @@ void Widget::createConnections()
     connect(mediaPlayer, &QMediaPlayer::playbackStateChanged, this, &Widget::onMediaPlayerStateChanged);
     connect(mediaPlayer, &QMediaPlayer::positionChanged, this, &Widget::onMediaPlayerPositionChanged);
     connect(mediaPlayer, &QMediaPlayer::durationChanged, this, &Widget::onMediaPlayerDurationChanged);
+    
+    // Whisper 轉錄
+    connect(whisperProcess, &QProcess::readyReadStandardOutput, this, &Widget::onWhisperOutputReady);
+    connect(whisperProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            this, &Widget::onWhisperFinished);
+    
+    // 播放清單拖放重排
+    connect(playlistWidget->model(), &QAbstractItemModel::rowsMoved, 
+            [this](const QModelIndex &, int, int, const QModelIndex &, int) {
+                // 當項目被移動時，更新內部資料結構
+                if (currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.size()) {
+                    Playlist& playlist = playlists[currentPlaylistIndex];
+                    QList<VideoInfo> newVideos;
+                    for (int i = 0; i < playlistWidget->count(); i++) {
+                        QListWidgetItem* item = playlistWidget->item(i);
+                        int oldIndex = item->data(Qt::UserRole).toInt();
+                        if (oldIndex >= 0 && oldIndex < playlist.videos.size()) {
+                            newVideos.append(playlist.videos[oldIndex]);
+                        }
+                    }
+                    playlist.videos = newVideos;
+                    // 重新分配索引
+                    for (int i = 0; i < playlistWidget->count(); i++) {
+                        playlistWidget->item(i)->setData(Qt::UserRole, i);
+                    }
+                    savePlaylistsToFile();
+                }
+            });
 }
 
 void Widget::onSearchClicked()
@@ -477,21 +522,28 @@ void Widget::playYouTubeLink(const QString& link)
     VideoInfo video;
     video.videoId = videoId;
     video.title = "YouTube 影片";
-    video.channelTitle = "點擊連結在瀏覽器中觀看";
+    video.channelTitle = "正在播放 YouTube 影片";
     video.isFavorite = false;
     video.isLocalFile = false;
     video.filePath = "";
     
+    // 使用 YouTube 嵌入式播放器
+    QString embedUrl = QString("https://www.youtube.com/embed/%1?autoplay=1").arg(videoId);
+    videoWebView->setUrl(QUrl(embedUrl));
+    
     // 顯示影片資訊
-    videoDisplayLabel->setText(createVideoDisplayHTML(video));
     videoTitleLabel->setText(video.title);
     channelLabel->setText(video.channelTitle);
     
-    // 更新狀態（注意：YouTube 影片在瀏覽器播放，所以不改變播放狀態）
+    // 更新狀態
+    isPlaying = true;
+    playPauseButton->setText("⏸");
+    currentVideoIndex = -1;  // 不屬於播放清單
+    
     updateButtonStates();
     
-    QMessageBox::information(this, "YouTube 連結", 
-        "已取得 YouTube 連結！\n請點擊顯示區域中的連結在瀏覽器中觀看影片。");
+    // 清空字幕顯示
+    subtitleDisplay->clear();
 }
 
 void Widget::playLocalFile(const QString& filePath)
@@ -515,17 +567,28 @@ void Widget::playLocalFile(const QString& filePath)
     mediaPlayer->setSource(QUrl::fromLocalFile(filePath));
     mediaPlayer->play();
     
-    // 顯示音樂資訊
+    // 在 WebView 中顯示本地音樂資訊
     QString displayHTML = QString(
-        "<div style='text-align: center;'>"
-        "<h2 style='color: #1DB954;'>🎵 本地音樂</h2>"
-        "<p style='font-size: 18px; margin: 20px 0;'>%1</p>"
-        "<p style='font-size: 14px; color: #888; margin: 10px 0;'>檔案: %2</p>"
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<style>"
+        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
+        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
+        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+        ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
+        "</style>"
+        "</head>"
+        "<body>"
+        "<h2>🎵 本地音樂</h2>"
+        "<p>%1</p>"
+        "<p class='filename'>檔案: %2</p>"
         "<p style='color: #666; font-size: 12px; margin-top: 30px;'>正在播放本地音樂檔案</p>"
-        "</div>"
+        "</body>"
+        "</html>"
     ).arg(video.title.toHtmlEscaped()).arg(fileInfo.fileName().toHtmlEscaped());
     
-    videoDisplayLabel->setText(displayHTML);
+    videoWebView->setHtml(displayHTML);
     videoTitleLabel->setText(video.title);
     channelLabel->setText(video.channelTitle);
     
@@ -535,6 +598,9 @@ void Widget::playLocalFile(const QString& filePath)
     currentVideoIndex = -1;  // 不屬於播放清單
     
     updateButtonStates();
+    
+    // 啟動 Whisper 轉錄
+    startWhisperTranscription(filePath);
 }
 
 void Widget::onPlayPauseClicked()
@@ -558,9 +624,13 @@ void Widget::onPlayPauseClicked()
                         playPauseButton->setText("⏸");
                     }
                 } else {
-                    // YouTube 影片，只是切換狀態顯示
+                    // YouTube 影片，切換播放狀態
+                    // 注意: YouTube 嵌入式播放器無法直接從 Qt 控制
+                    // 用戶需要在視頻播放器內控制播放/暫停
                     isPlaying = !isPlaying;
                     playPauseButton->setText(isPlaying ? "⏸" : "▶");
+                    QMessageBox::information(this, "提示", 
+                        "YouTube 影片播放控制需要在視頻播放器內操作。\n此按鈕僅顯示播放狀態。");
                 }
             }
         }
@@ -823,7 +893,7 @@ void Widget::onDeletePlaylistClicked()
                                     .arg(playlists[currentPlaylistIndex].name),
                                     QMessageBox::Yes | QMessageBox::No);
     if (ret == QMessageBox::Yes) {
-        videoDisplayLabel->clear();
+        videoWebView->setHtml("");
         currentVideoIndex = -1;
         isPlaying = false;
         playlists.removeAt(currentPlaylistIndex);
@@ -894,22 +964,40 @@ void Widget::playVideo(int index)
         
         QFileInfo fileInfo(video.filePath);
         QString displayHTML = QString(
-            "<div style='text-align: center;'>"
-            "<h2 style='color: #1DB954;'>🎵 本地音樂</h2>"
-            "<p style='font-size: 18px; margin: 20px 0;'>%1</p>"
-            "<p style='font-size: 14px; color: #888; margin: 10px 0;'>檔案: %2</p>"
+            "<!DOCTYPE html>"
+            "<html>"
+            "<head>"
+            "<style>"
+            "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
+            "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
+            "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+            ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
+            "</style>"
+            "</head>"
+            "<body>"
+            "<h2>🎵 本地音樂</h2>"
+            "<p>%1</p>"
+            "<p class='filename'>檔案: %2</p>"
             "<p style='color: #666; font-size: 12px; margin-top: 30px;'>正在播放本地音樂檔案</p>"
-            "</div>"
+            "</body>"
+            "</html>"
         ).arg(video.title.toHtmlEscaped()).arg(fileInfo.fileName().toHtmlEscaped());
         
-        videoDisplayLabel->setText(displayHTML);
+        videoWebView->setHtml(displayHTML);
         isPlaying = true;
         playPauseButton->setText("⏸");
+        
+        // 啟動 Whisper 轉錄
+        startWhisperTranscription(video.filePath);
     } else {
-        // 顯示 YouTube 影片資訊（不自動播放）
-        videoDisplayLabel->setText(createVideoDisplayHTML(video));
-        isPlaying = false;
-        playPauseButton->setText("▶");
+        // 播放 YouTube 影片
+        QString embedUrl = QString("https://www.youtube.com/embed/%1?autoplay=1").arg(video.videoId);
+        videoWebView->setUrl(QUrl(embedUrl));
+        isPlaying = true;
+        playPauseButton->setText("⏸");
+        
+        // 清空字幕顯示
+        subtitleDisplay->clear();
     }
     
     // 更新顯示
@@ -1126,4 +1214,72 @@ QString Widget::createVideoDisplayHTML(const VideoInfo& video)
         "<p style='color: #666; font-size: 12px;'>點擊上方連結在您的瀏覽器中觀看此影片</p>"
         "</div>"
     ).arg(escapedTitle).arg(escapedChannel).arg(watchUrl);
+}
+
+void Widget::startWhisperTranscription(const QString& audioFilePath)
+{
+    // 停止現有的 Whisper 處理程序
+    if (whisperProcess->state() != QProcess::NotRunning) {
+        whisperProcess->kill();
+        whisperProcess->waitForFinished();
+    }
+    
+    // 清空字幕顯示
+    subtitleDisplay->clear();
+    subtitleDisplay->append("正在啟動語音轉錄...");
+    
+    // 檢查 Whisper 腳本是否存在
+    QString whisperScript = "whisper_transcribe.py";
+    QFileInfo scriptInfo(whisperScript);
+    
+    if (!scriptInfo.exists()) {
+        subtitleDisplay->append("注意: whisper_transcribe.py 腳本不存在");
+        subtitleDisplay->append("請確保已安裝 Whisper 並創建轉錄腳本");
+        return;
+    }
+    
+    // 啟動 Whisper 處理程序
+    QStringList arguments;
+    arguments << whisperScript << audioFilePath;
+    
+    whisperProcess->start("python3", arguments);
+    
+    if (!whisperProcess->waitForStarted(3000)) {
+        subtitleDisplay->append("錯誤: 無法啟動 Whisper 處理程序");
+        subtitleDisplay->append("請確保已安裝 Python 和 Whisper");
+    }
+}
+
+void Widget::onWhisperOutputReady()
+{
+    // 讀取 Whisper 的標準輸出
+    QByteArray output = whisperProcess->readAllStandardOutput();
+    QString text = QString::fromUtf8(output).trimmed();
+    
+    if (!text.isEmpty()) {
+        // 將新的轉錄文字附加到字幕顯示
+        subtitleDisplay->append(text);
+        
+        // 自動滾動到底部
+        QTextCursor cursor = subtitleDisplay->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        subtitleDisplay->setTextCursor(cursor);
+    }
+}
+
+void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (exitStatus == QProcess::CrashExit) {
+        subtitleDisplay->append("\n[轉錄處理程序異常終止]");
+    } else if (exitCode != 0) {
+        subtitleDisplay->append(QString("\n[轉錄處理程序結束，退出碼: %1]").arg(exitCode));
+        
+        // 讀取錯誤輸出
+        QByteArray errorOutput = whisperProcess->readAllStandardError();
+        if (!errorOutput.isEmpty()) {
+            subtitleDisplay->append("錯誤信息: " + QString::fromUtf8(errorOutput));
+        }
+    } else {
+        subtitleDisplay->append("\n[轉錄完成]");
+    }
 }
