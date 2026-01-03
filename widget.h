@@ -25,6 +25,7 @@
 #include <QProcess>
 #include <QTextEdit>
 #include <QTextBrowser>
+#include <QTimer>
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class Widget;
@@ -65,8 +66,7 @@ private slots:
     void onShuffleClicked();
     void onRepeatClicked();
     
-    // 搜尋功能
-    void onSearchClicked();
+    // 本地檔案載入
     void onLoadLocalFileClicked();
     
     // 播放清單管理
@@ -86,6 +86,9 @@ private slots:
     // Whisper 輸出
     void onWhisperOutputReady();
     void onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    
+    // 字幕連結點擊
+    void onSubtitleLinkClicked(const QUrl& url);
 
 private:
     void setupUI();
@@ -119,11 +122,9 @@ private:
     
     // Whisper 轉錄
     QProcess* whisperProcess;
-    QTextEdit* subtitleDisplay;
+    QTextBrowser* subtitleDisplay;  // 使用 QTextBrowser 以支援可點擊連結
     
     // UI 元件
-    QLineEdit* searchEdit;
-    QPushButton* searchButton;
     QPushButton* loadLocalFileButton;
     QLabel* videoTitleLabel;
     QLabel* channelLabel;

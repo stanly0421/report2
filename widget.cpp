@@ -14,6 +14,7 @@
 #include <QTextBrowser>
 #include <QProcess>
 #include <QDesktopServices>
+#include <QTimer>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
@@ -162,28 +163,7 @@ void Widget::setupUI()
     
     topLayout->addStretch();
     
-    searchEdit = new QLineEdit(topBar);
-    searchEdit->setPlaceholderText("貼上 YouTube 連結...");
-    searchEdit->setMinimumWidth(400);
-    topLayout->addWidget(searchEdit);
-    
-    searchButton = new QPushButton("▶ 播放", topBar);
-    searchButton->setStyleSheet(
-        "QPushButton {"
-        "   background-color: #1DB954;"
-        "   color: white;"
-        "   border: none;"
-        "   border-radius: 20px;"
-        "   padding: 8px 24px;"
-        "   font-size: 14px;"
-        "   font-weight: bold;"
-        "}"
-        "QPushButton:hover { background-color: #1ED760; }"
-        "QPushButton:pressed { background-color: #1AA34A; }"
-    );
-    topLayout->addWidget(searchButton);
-    
-    loadLocalFileButton = new QPushButton("📁 本地音樂", topBar);
+    loadLocalFileButton = new QPushButton("📁 載入音樂檔案", topBar);
     loadLocalFileButton->setStyleSheet(
         "QPushButton {"
         "   background-color: #282828;"
@@ -301,12 +281,12 @@ void Widget::setupUI()
     videoDisplayArea->setHtml(generateWelcomeHTML());
     centerLayout->addWidget(videoDisplayArea, 1);
     
-    // 字幕顯示區域
-    subtitleDisplay = new QTextEdit(centerPanel);
-    subtitleDisplay->setReadOnly(true);
-    subtitleDisplay->setMaximumHeight(100);
+    // 字幕顯示區域 - 使用 QTextBrowser 以支援可點擊的時間戳
+    subtitleDisplay = new QTextBrowser(centerPanel);
+    subtitleDisplay->setMaximumHeight(150);
+    subtitleDisplay->setOpenExternalLinks(false);  // 不開啟外部連結，由我們處理
     subtitleDisplay->setStyleSheet(
-        "QTextEdit {"
+        "QTextBrowser {"
         "   background-color: #181818;"
         "   color: #FFFFFF;"
         "   font-size: 14px;"
@@ -314,8 +294,17 @@ void Widget::setupUI()
         "   border-radius: 8px;"
         "   border: 1px solid #282828;"
         "}"
+        "QTextBrowser a {"
+        "   color: #1DB954;"
+        "   text-decoration: none;"
+        "   font-weight: bold;"
+        "}"
+        "QTextBrowser a:hover {"
+        "   color: #1ED760;"
+        "   text-decoration: underline;"
+        "}"
     );
-    subtitleDisplay->setPlaceholderText("字幕將在播放時顯示...");
+    subtitleDisplay->setPlaceholderText("字幕將在播放時顯示，點擊時間戳可跳轉到該位置...");
     centerLayout->addWidget(subtitleDisplay);
     
     // 播放控制區域
@@ -409,9 +398,7 @@ void Widget::setupUI()
 
 void Widget::createConnections()
 {
-    // 搜尋功能
-    connect(searchButton, &QPushButton::clicked, this, &Widget::onSearchClicked);
-    connect(searchEdit, &QLineEdit::returnPressed, this, &Widget::onSearchClicked);
+    // 本地檔案載入
     connect(loadLocalFileButton, &QPushButton::clicked, this, &Widget::onLoadLocalFileClicked);
     
     // 播放控制按鈕
@@ -443,6 +430,9 @@ void Widget::createConnections()
     connect(whisperProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
             this, &Widget::onWhisperFinished);
     
+    // 字幕連結點擊 - 跳轉到指定時間
+    connect(subtitleDisplay, &QTextBrowser::anchorClicked, this, &Widget::onSubtitleLinkClicked);
+    
     // 播放清單拖放重排
     connect(playlistWidget->model(), &QAbstractItemModel::rowsMoved, 
             [this](const QModelIndex &, int, int, const QModelIndex &, int) {
@@ -465,17 +455,6 @@ void Widget::createConnections()
                     savePlaylistsToFile();
                 }
             });
-}
-
-void Widget::onSearchClicked()
-{
-    QString link = searchEdit->text().trimmed();
-    if (link.isEmpty()) {
-        QMessageBox::warning(this, "播放", "請貼上 YouTube 連結！");
-        return;
-    }
-    
-    playYouTubeLink(link);
 }
 
 void Widget::onLoadLocalFileClicked()
@@ -1310,13 +1289,85 @@ void Widget::onWhisperOutputReady()
     QString text = QString::fromUtf8(output).trimmed();
     
     if (!text.isEmpty()) {
-        // 將新的轉錄文字附加到字幕顯示
-        subtitleDisplay->append(text);
+        // 解析時間戳格式: [start - end] text
+        // 例如: [0.00s - 5.23s] 這是一段文字
+        QRegularExpression timestampRegex(R"(\[(\d+\.?\d*)s\s*-\s*(\d+\.?\d*)s\])");
+        
+        QString htmlText;
+        QTextStream stream(&htmlText);
+        
+        QStringList lines = text.split('\n');
+        for (const QString& line : lines) {
+            if (line.isEmpty()) continue;
+            
+            QRegularExpressionMatch match = timestampRegex.match(line);
+            if (match.hasMatch()) {
+                // 找到時間戳
+                QString startTime = match.captured(1);
+                QString endTime = match.captured(2);
+                QString timestamp = match.captured(0);  // 完整的時間戳字串
+                
+                // 獲取文字內容（時間戳後的部分）
+                int timestampEnd = match.capturedEnd();
+                QString content = line.mid(timestampEnd).trimmed();
+                
+                // 創建可點擊的連結，使用 start 時間作為跳轉目標
+                QString clickableTimestamp = QString("<a href=\"#%1\">%2</a>")
+                    .arg(startTime)
+                    .arg(timestamp);
+                
+                stream << "<p>" << clickableTimestamp << " " << content.toHtmlEscaped() << "</p>";
+            } else {
+                // 沒有時間戳的一般文字
+                stream << "<p>" << line.toHtmlEscaped() << "</p>";
+            }
+        }
+        
+        // 附加新的 HTML 內容到字幕顯示
+        subtitleDisplay->append(htmlText);
         
         // 自動滾動到底部
         QTextCursor cursor = subtitleDisplay->textCursor();
         cursor.movePosition(QTextCursor::End);
         subtitleDisplay->setTextCursor(cursor);
+    }
+}
+
+void Widget::onSubtitleLinkClicked(const QUrl& url)
+{
+    // 從 URL 片段中提取時間（秒）
+    QString timeStr = url.fragment();
+    bool ok;
+    double seconds = timeStr.toDouble(&ok);
+    
+    if (ok && seconds >= 0) {
+        // 轉換為毫秒
+        qint64 positionMs = static_cast<qint64>(seconds * 1000);
+        
+        // 跳轉到指定位置
+        if (mediaPlayer->playbackState() != QMediaPlayer::StoppedState) {
+            mediaPlayer->setPosition(positionMs);
+            
+            // 顯示提示訊息
+            QString timeDisplay = QString("%1:%2")
+                .arg(static_cast<int>(seconds) / 60, 2, 10, QChar('0'))
+                .arg(static_cast<int>(seconds) % 60, 2, 10, QChar('0'));
+            
+            videoTitleLabel->setText(QString("跳轉到 %1").arg(timeDisplay));
+            
+            // 2 秒後恢復原標題
+            QTimer::singleShot(2000, this, [this]() {
+                if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
+                    currentPlaylistIndex < playlists.size()) {
+                    const Playlist& playlist = playlists[currentPlaylistIndex];
+                    if (currentVideoIndex < playlist.videos.size()) {
+                        videoTitleLabel->setText(playlist.videos[currentVideoIndex].title);
+                    }
+                }
+            });
+        } else {
+            QMessageBox::information(this, "提示", "請先播放音樂後再跳轉到字幕位置。");
+        }
     }
 }
 
