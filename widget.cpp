@@ -1493,17 +1493,7 @@ void Widget::onWhisperOutputReady()
         currentSubtitles += htmlText;
         
         // 更新顯示（如果當前正在播放本地檔案）
-        if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
-            currentPlaylistIndex < playlists.size()) {
-            const Playlist& playlist = playlists[currentPlaylistIndex];
-            if (currentVideoIndex < playlist.videos.size()) {
-                const VideoInfo& video = playlist.videos[currentVideoIndex];
-                if (video.isLocalFile) {
-                    QFileInfo fileInfo(video.filePath);
-                    updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
-                }
-            }
-        }
+        updateSubtitleDisplay();
     }
 }
 
@@ -1631,25 +1621,29 @@ void Widget::restoreCurrentVideoTitle()
     }
 }
 
+void Widget::updateSubtitleDisplay()
+{
+    // Helper function to update subtitle display for current playing video
+    if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
+        currentPlaylistIndex < playlists.size()) {
+        const Playlist& playlist = playlists[currentPlaylistIndex];
+        if (currentVideoIndex < playlist.videos.size()) {
+            const VideoInfo& video = playlist.videos[currentVideoIndex];
+            if (video.isLocalFile) {
+                QFileInfo fileInfo(video.filePath);
+                updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
+            }
+        }
+    }
+}
+
 void Widget::loadSrt(const QString& srtFilePath)
 {
     // 檢查 SRT 檔案是否存在
     QFileInfo srtFileInfo(srtFilePath);
     if (!srtFileInfo.exists()) {
         currentSubtitles += "<p style='color: #888;'>錯誤: 找不到 SRT 檔案: " + srtFilePath.toHtmlEscaped() + "</p>";
-        
-        // 更新顯示
-        if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
-            currentPlaylistIndex < playlists.size()) {
-            const Playlist& playlist = playlists[currentPlaylistIndex];
-            if (currentVideoIndex < playlist.videos.size()) {
-                const VideoInfo& video = playlist.videos[currentVideoIndex];
-                if (video.isLocalFile) {
-                    QFileInfo fileInfo(video.filePath);
-                    updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
-                }
-            }
-        }
+        updateSubtitleDisplay();
         return;
     }
     
@@ -1657,24 +1651,16 @@ void Widget::loadSrt(const QString& srtFilePath)
     QFile srtFile(srtFilePath);
     if (!srtFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         currentSubtitles += "<p style='color: #888;'>錯誤: 無法開啟 SRT 檔案</p>";
-        
-        // 更新顯示
-        if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
-            currentPlaylistIndex < playlists.size()) {
-            const Playlist& playlist = playlists[currentPlaylistIndex];
-            if (currentVideoIndex < playlist.videos.size()) {
-                const VideoInfo& video = playlist.videos[currentVideoIndex];
-                if (video.isLocalFile) {
-                    QFileInfo fileInfo(video.filePath);
-                    updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
-                }
-            }
-        }
+        updateSubtitleDisplay();
         return;
     }
     
     QTextStream in(&srtFile);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    in.setEncoding(QStringConverter::Utf8);
+#else
     in.setCodec("UTF-8");
+#endif
     
     QString srtContent = in.readAll();
     srtFile.close();
@@ -1695,6 +1681,7 @@ void Widget::loadSrt(const QString& srtFilePath)
     // 使用正則表達式解析 SRT
     // 時間戳格式: 00:00:00,000 --> 00:00:05,230
     QRegularExpression srtTimestampRegex(R"((\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3}))");
+    QRegularExpression sequenceNumberRegex(R"(^\d+$)");  // 用於識別序號行
     
     QStringList lines = srtContent.split('\n');
     int i = 0;
@@ -1702,8 +1689,14 @@ void Widget::loadSrt(const QString& srtFilePath)
     while (i < lines.size()) {
         QString line = lines[i].trimmed();
         
-        // 跳過空行和序號行
-        if (line.isEmpty() || line.toInt() > 0) {
+        // 跳過空行
+        if (line.isEmpty()) {
+            i++;
+            continue;
+        }
+        
+        // 跳過序號行（純數字）
+        if (sequenceNumberRegex.match(line).hasMatch()) {
             i++;
             continue;
         }
@@ -1735,11 +1728,23 @@ void Widget::loadSrt(const QString& srtFilePath)
             // 讀取字幕文字（可能有多行）
             i++;
             QString subtitleText;
-            while (i < lines.size() && !lines[i].trimmed().isEmpty() && lines[i].trimmed().toInt() == 0) {
+            while (i < lines.size()) {
+                QString textLine = lines[i].trimmed();
+                
+                // 遇到空行或序號行，字幕文字結束
+                if (textLine.isEmpty() || sequenceNumberRegex.match(textLine).hasMatch()) {
+                    break;
+                }
+                
+                // 遇到時間戳行，字幕文字結束（異常情況）
+                if (srtTimestampRegex.match(textLine).hasMatch()) {
+                    break;
+                }
+                
                 if (!subtitleText.isEmpty()) {
                     subtitleText += " ";
                 }
-                subtitleText += lines[i].trimmed();
+                subtitleText += textLine;
                 i++;
             }
             
@@ -1758,17 +1763,7 @@ void Widget::loadSrt(const QString& srtFilePath)
     currentSubtitles = htmlSubtitles;
     
     // 更新顯示
-    if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
-        currentPlaylistIndex < playlists.size()) {
-        const Playlist& playlist = playlists[currentPlaylistIndex];
-        if (currentVideoIndex < playlist.videos.size()) {
-            const VideoInfo& video = playlist.videos[currentVideoIndex];
-            if (video.isLocalFile) {
-                QFileInfo fileInfo(video.filePath);
-                updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
-            }
-        }
-    }
+    updateSubtitleDisplay();
 }
 
 void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -1788,17 +1783,7 @@ void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
         currentSubtitles += finishMessage;
         
         // 更新顯示錯誤信息
-        if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
-            currentPlaylistIndex < playlists.size()) {
-            const Playlist& playlist = playlists[currentPlaylistIndex];
-            if (currentVideoIndex < playlist.videos.size()) {
-                const VideoInfo& video = playlist.videos[currentVideoIndex];
-                if (video.isLocalFile) {
-                    QFileInfo fileInfo(video.filePath);
-                    updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
-                }
-            }
-        }
+        updateSubtitleDisplay();
     } else {
         // 轉錄成功完成，載入 SRT 檔案
         finishMessage = "<p style='color: #1DB954;'>[Vibe 轉錄完成，正在載入字幕...]</p>";
@@ -1808,7 +1793,7 @@ void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
         loadSrt(currentSrtFilePath);
     }
 }
-}
+
 
 void Widget::onPlaylistContextMenu(const QPoint& pos)
 {

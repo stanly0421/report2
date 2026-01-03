@@ -120,6 +120,7 @@ private:
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
     void loadSrt(const QString& srtFilePath);
+    void updateSubtitleDisplay();  // Helper to update subtitle display for current video
     void restoreCurrentVideoTitle();
     void updateLocalMusicDisplay(const QString& title, const QString& fileName, const QString& subtitles);
 
