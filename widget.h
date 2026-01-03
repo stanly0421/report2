@@ -72,6 +72,8 @@ private slots:
     // 播放清單管理
     void onVideoDoubleClicked(QListWidgetItem* item);
     void onToggleFavoriteClicked();
+    void onDeleteFromPlaylist();
+    void onPlaylistContextMenu(const QPoint& pos);
     
     // 播放清單選擇
     void onNewPlaylistClicked();
@@ -111,6 +113,7 @@ private:
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
     void restoreCurrentVideoTitle();
+    void updateLocalMusicDisplay(const QString& title, const QString& fileName, const QString& subtitles);
 
     Ui::Widget *ui;
     
@@ -150,6 +153,7 @@ private:
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
     QRegularExpression subtitleTimestampRegex;  // Regex pattern for parsing subtitle timestamps
+    QString currentSubtitles;  // 儲存當前字幕內容
 };
 
 #endif // WIDGET_H

@@ -16,6 +16,7 @@
 #include <QProcess>
 #include <QDesktopServices>
 #include <QTimer>
+#include <QMenu>
 #include <cmath>
 
 Widget::Widget(QWidget *parent)
@@ -32,6 +33,7 @@ Widget::Widget(QWidget *parent)
     , isRepeatMode(false)
     , isPlaying(false)
     , subtitleTimestampRegex(R"(\[(\d+\.?\d*)s\s*-\s*(\d+\.?\d*)s\])")
+    , currentSubtitles("")
 {
     ui->setupUi(this);
     
@@ -239,6 +241,7 @@ void Widget::setupUI()
     playlistWidget = new QListWidget(leftPanel);
     playlistWidget->setDragDropMode(QAbstractItemView::InternalMove);
     playlistWidget->setDefaultDropAction(Qt::MoveAction);
+    playlistWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     leftLayout->addWidget(playlistWidget);
     
     contentSplitter->addWidget(leftPanel);
@@ -261,9 +264,10 @@ void Widget::setupUI()
     centerLayout->addWidget(channelLabel);
     
     // 影片顯示區域 - 使用 QTextBrowser 支援 HTML 顯示和連結點擊
+    // 這個區域現在同時顯示歌曲資訊和字幕
     videoDisplayArea = new QTextBrowser(centerPanel);
     videoDisplayArea->setMinimumHeight(400);
-    videoDisplayArea->setOpenExternalLinks(true);  // 允許點擊連結在瀏覽器中開啟
+    videoDisplayArea->setOpenExternalLinks(false);  // 由我們自己處理連結點擊
     videoDisplayArea->setStyleSheet(
         "QTextBrowser {"
         "   background-color: #000000;"
@@ -284,31 +288,8 @@ void Widget::setupUI()
     videoDisplayArea->setHtml(generateWelcomeHTML());
     centerLayout->addWidget(videoDisplayArea, 1);
     
-    // 字幕顯示區域 - 使用 QTextBrowser 以支援可點擊的時間戳
-    subtitleDisplay = new QTextBrowser(centerPanel);
-    subtitleDisplay->setMaximumHeight(150);
-    subtitleDisplay->setOpenExternalLinks(false);  // 不開啟外部連結，由我們處理
-    subtitleDisplay->setStyleSheet(
-        "QTextBrowser {"
-        "   background-color: #181818;"
-        "   color: #FFFFFF;"
-        "   font-size: 14px;"
-        "   padding: 10px;"
-        "   border-radius: 8px;"
-        "   border: 1px solid #282828;"
-        "}"
-        "QTextBrowser a {"
-        "   color: #1DB954;"
-        "   text-decoration: none;"
-        "   font-weight: bold;"
-        "}"
-        "QTextBrowser a:hover {"
-        "   color: #1ED760;"
-        "   text-decoration: underline;"
-        "}"
-    );
-    subtitleDisplay->setPlaceholderText("字幕將在播放時顯示，點擊時間戳可跳轉到該位置...");
-    centerLayout->addWidget(subtitleDisplay);
+    // 字幕將顯示在 videoDisplayArea 中，不再需要單獨的字幕顯示區域
+    subtitleDisplay = videoDisplayArea;  // 使用同一個顯示區域
     
     // 播放控制區域
     QWidget* controlWidget = new QWidget(centerPanel);
@@ -414,6 +395,7 @@ void Widget::createConnections()
     // 播放清單管理
     connect(playlistWidget, &QListWidget::itemDoubleClicked, this, &Widget::onVideoDoubleClicked);
     connect(playlistWidget, &QListWidget::itemSelectionChanged, this, &Widget::updateButtonStates);
+    connect(playlistWidget, &QListWidget::customContextMenuRequested, this, &Widget::onPlaylistContextMenu);
     
     // 最愛按鈕
     connect(toggleFavoriteButton, &QPushButton::clicked, this, &Widget::onToggleFavoriteClicked);
@@ -434,7 +416,7 @@ void Widget::createConnections()
             this, &Widget::onWhisperFinished);
     
     // 字幕連結點擊 - 跳轉到指定時間
-    connect(subtitleDisplay, &QTextBrowser::anchorClicked, this, &Widget::onSubtitleLinkClicked);
+    connect(videoDisplayArea, &QTextBrowser::anchorClicked, this, &Widget::onSubtitleLinkClicked);
     
     // 播放清單拖放重排
     connect(playlistWidget->model(), &QAbstractItemModel::rowsMoved, 
@@ -539,7 +521,7 @@ void Widget::playYouTubeLink(const QString& link)
     updateButtonStates();
     
     // 清空字幕顯示
-    subtitleDisplay->clear();
+    currentSubtitles = "";
 }
 
 void Widget::playLocalFile(const QString& filePath)
@@ -563,9 +545,8 @@ void Widget::playLocalFile(const QString& filePath)
     mediaPlayer->setSource(QUrl::fromLocalFile(filePath));
     mediaPlayer->play();
     
-    // 在 WebView 中顯示本地音樂資訊
-    QFileInfo fileInfo(filePath);
-    videoDisplayArea->setHtml(generateLocalMusicHTML(video.title, fileInfo.fileName()));
+    // 更新顯示
+    updateLocalMusicDisplay(video.title, fileInfo.fileName(), "");
     
     updateVideoLabels(video);
     
@@ -611,12 +592,16 @@ void Widget::onPlayPauseClicked()
             }
         }
     } else {
-        // 沒有影片，播放播放清單第一首
+        // 沒有影片，嘗試播放播放清單第一首
         if (currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.size()) {
             Playlist& playlist = playlists[currentPlaylistIndex];
             if (!playlist.videos.isEmpty()) {
                 playVideo(0);
+            } else {
+                QMessageBox::information(this, "提示", "播放清單是空的，請先載入音樂檔案。");
             }
+        } else {
+            QMessageBox::information(this, "提示", "請先選擇一個播放清單並載入音樂檔案。");
         }
     }
 }
@@ -800,7 +785,16 @@ void Widget::onToggleFavoriteClicked()
     bool isInFavorites = false;
     int favoriteIndex = -1;
     for (int i = 0; i < favoritesPlaylist.videos.size(); i++) {
-        if (favoritesPlaylist.videos[i].videoId == video.videoId) {
+        const VideoInfo& favVideo = favoritesPlaylist.videos[i];
+        // 對於本地檔案比較 filePath，對於 YouTube 影片比較 videoId
+        bool isSameVideo = false;
+        if (video.isLocalFile && favVideo.isLocalFile) {
+            isSameVideo = (favVideo.filePath == video.filePath);
+        } else if (!video.isLocalFile && !favVideo.isLocalFile) {
+            isSameVideo = (favVideo.videoId == video.videoId);
+        }
+        
+        if (isSameVideo) {
             isInFavorites = true;
             favoriteIndex = i;
             break;
@@ -939,7 +933,7 @@ void Widget::playVideo(int index)
         mediaPlayer->play();
         
         QFileInfo fileInfo(video.filePath);
-        videoDisplayArea->setHtml(generateLocalMusicHTML(video.title, fileInfo.fileName()));
+        updateLocalMusicDisplay(video.title, fileInfo.fileName(), "");
         
         isPlaying = true;
         playPauseButton->setText("⏸");
@@ -953,7 +947,7 @@ void Widget::playVideo(int index)
         playPauseButton->setText("⏸");
         
         // 清空字幕顯示
-        subtitleDisplay->clear();
+        currentSubtitles = "";
     }
     
     // 更新顯示
@@ -1214,13 +1208,19 @@ QString Widget::generateLocalMusicHTML(const QString& title, const QString& file
         "<style>"
         "%1"
         ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
+        ".subtitle-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid #282828; }"
+        ".subtitle-title { font-size: 16px; color: #1DB954; margin-bottom: 10px; font-weight: bold; }"
+        ".subtitle-content { font-size: 14px; color: #B3B3B3; line-height: 1.6; }"
         "</style>"
         "</head>"
         "<body>"
         "<h2>🎵 本地音樂</h2>"
         "<p>%2</p>"
         "<p class='filename'>檔案: %3</p>"
-        "<p style='color: #666; font-size: 12px; margin-top: 30px;'>正在播放本地音樂檔案</p>"
+        "<div class='subtitle-section' id='subtitle-area'>"
+        "<div class='subtitle-title'>📝 字幕</div>"
+        "<div class='subtitle-content' id='subtitle-content'>正在載入字幕，點擊時間戳可跳轉到該位置...</div>"
+        "</div>"
         "</body>"
         "</html>"
     ).arg(BASE_HTML_STYLE)
@@ -1259,17 +1259,16 @@ void Widget::startWhisperTranscription(const QString& audioFilePath)
         whisperProcess->waitForFinished();
     }
     
-    // 清空字幕顯示
-    subtitleDisplay->clear();
-    subtitleDisplay->append("正在啟動語音轉錄...");
+    // 清空字幕內容
+    currentSubtitles = "";
     
     // 檢查 Whisper 腳本是否存在
     QString whisperScript = "whisper_transcribe.py";
     QFileInfo scriptInfo(whisperScript);
     
     if (!scriptInfo.exists()) {
-        subtitleDisplay->append("注意: whisper_transcribe.py 腳本不存在");
-        subtitleDisplay->append("請確保已安裝 Whisper 並創建轉錄腳本");
+        currentSubtitles = "<p style='color: #888;'>注意: whisper_transcribe.py 腳本不存在</p>"
+                          "<p style='color: #888;'>請確保已安裝 Whisper 並創建轉錄腳本</p>";
         return;
     }
     
@@ -1280,8 +1279,8 @@ void Widget::startWhisperTranscription(const QString& audioFilePath)
     whisperProcess->start("python3", arguments);
     
     if (!whisperProcess->waitForStarted(3000)) {
-        subtitleDisplay->append("錯誤: 無法啟動 Whisper 處理程序");
-        subtitleDisplay->append("請確保已安裝 Python 和 Whisper");
+        currentSubtitles = "<p style='color: #888;'>錯誤: 無法啟動 Whisper 處理程序</p>"
+                          "<p style='color: #888;'>請確保已安裝 Python 和 Whisper</p>";
     }
 }
 
@@ -1325,14 +1324,57 @@ void Widget::onWhisperOutputReady()
             }
         }
         
-        // 附加新的 HTML 內容到字幕顯示
-        subtitleDisplay->append(htmlText);
+        // 累積字幕內容
+        currentSubtitles += htmlText;
         
-        // 自動滾動到底部
-        QTextCursor cursor = subtitleDisplay->textCursor();
-        cursor.movePosition(QTextCursor::End);
-        subtitleDisplay->setTextCursor(cursor);
+        // 更新顯示（如果當前正在播放本地檔案）
+        if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
+            currentPlaylistIndex < playlists.size()) {
+            const Playlist& playlist = playlists[currentPlaylistIndex];
+            if (currentVideoIndex < playlist.videos.size()) {
+                const VideoInfo& video = playlist.videos[currentVideoIndex];
+                if (video.isLocalFile) {
+                    QFileInfo fileInfo(video.filePath);
+                    updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
+                }
+            }
+        }
     }
+}
+
+void Widget::updateLocalMusicDisplay(const QString& title, const QString& fileName, const QString& subtitles)
+{
+    QString subtitleContent = subtitles.isEmpty() ? 
+        "正在載入字幕，點擊時間戳可跳轉到該位置..." : subtitles;
+    
+    QString html = QString(
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<style>"
+        "%1"
+        ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
+        ".subtitle-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid #282828; }"
+        ".subtitle-title { font-size: 16px; color: #1DB954; margin-bottom: 10px; font-weight: bold; }"
+        ".subtitle-content { font-size: 14px; color: #B3B3B3; line-height: 1.6; }"
+        "</style>"
+        "</head>"
+        "<body>"
+        "<h2>🎵 本地音樂</h2>"
+        "<p>%2</p>"
+        "<p class='filename'>檔案: %3</p>"
+        "<div class='subtitle-section'>"
+        "<div class='subtitle-title'>📝 字幕</div>"
+        "<div class='subtitle-content'>%4</div>"
+        "</div>"
+        "</body>"
+        "</html>"
+    ).arg(BASE_HTML_STYLE)
+     .arg(title.toHtmlEscaped())
+     .arg(fileName.toHtmlEscaped())
+     .arg(subtitleContent);
+    
+    videoDisplayArea->setHtml(html);
 }
 
 void Widget::onSubtitleLinkClicked(const QUrl& url)
@@ -1385,17 +1427,95 @@ void Widget::restoreCurrentVideoTitle()
 
 void Widget::onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    QString finishMessage;
     if (exitStatus == QProcess::CrashExit) {
-        subtitleDisplay->append("\n[轉錄處理程序異常終止]");
+        finishMessage = "<p style='color: #888;'>[轉錄處理程序異常終止]</p>";
     } else if (exitCode != 0) {
-        subtitleDisplay->append(QString("\n[轉錄處理程序結束，退出碼: %1]").arg(exitCode));
+        finishMessage = QString("<p style='color: #888;'>[轉錄處理程序結束，退出碼: %1]</p>").arg(exitCode);
         
         // 讀取錯誤輸出
         QByteArray errorOutput = whisperProcess->readAllStandardError();
         if (!errorOutput.isEmpty()) {
-            subtitleDisplay->append("錯誤信息: " + QString::fromUtf8(errorOutput));
+            finishMessage += "<p style='color: #888;'>錯誤信息: " + QString::fromUtf8(errorOutput).toHtmlEscaped() + "</p>";
         }
     } else {
-        subtitleDisplay->append("\n[轉錄完成]");
+        finishMessage = "<p style='color: #888;'>[轉錄完成]</p>";
     }
+    
+    currentSubtitles += finishMessage;
+    
+    // 更新顯示
+    if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
+        currentPlaylistIndex < playlists.size()) {
+        const Playlist& playlist = playlists[currentPlaylistIndex];
+        if (currentVideoIndex < playlist.videos.size()) {
+            const VideoInfo& video = playlist.videos[currentVideoIndex];
+            if (video.isLocalFile) {
+                QFileInfo fileInfo(video.filePath);
+                updateLocalMusicDisplay(video.title, fileInfo.fileName(), currentSubtitles);
+            }
+        }
+    }
+}
+
+void Widget::onPlaylistContextMenu(const QPoint& pos)
+{
+    QListWidgetItem* item = playlistWidget->itemAt(pos);
+    if (!item) return;
+    
+    QMenu contextMenu(this);
+    
+    QAction* playAction = contextMenu.addAction("▶ 播放");
+    QAction* deleteAction = contextMenu.addAction("🗑️ 從播放清單移除");
+    QAction* addToFavAction = contextMenu.addAction("❤️ 加入最愛");
+    
+    QAction* selectedAction = contextMenu.exec(playlistWidget->mapToGlobal(pos));
+    
+    if (selectedAction == playAction) {
+        int index = playlistWidget->row(item);
+        playVideo(index);
+    } else if (selectedAction == deleteAction) {
+        onDeleteFromPlaylist();
+    } else if (selectedAction == addToFavAction) {
+        // 暫時選中這首歌並加入最愛
+        int oldIndex = currentVideoIndex;
+        currentVideoIndex = playlistWidget->row(item);
+        onToggleFavoriteClicked();
+        currentVideoIndex = oldIndex;
+    }
+}
+
+void Widget::onDeleteFromPlaylist()
+{
+    if (currentPlaylistIndex < 0 || currentPlaylistIndex >= playlists.size()) return;
+    
+    int selectedRow = playlistWidget->currentRow();
+    if (selectedRow < 0) return;
+    
+    Playlist& playlist = playlists[currentPlaylistIndex];
+    if (selectedRow >= playlist.videos.size()) return;
+    
+    // 如果刪除的是正在播放的歌曲，停止播放
+    if (selectedRow == currentVideoIndex) {
+        mediaPlayer->stop();
+        currentVideoIndex = -1;
+        videoDisplayArea->setHtml(generateWelcomeHTML());
+        videoTitleLabel->setText("選擇一首歌曲開始播放");
+        channelLabel->setText("");
+        isPlaying = false;
+        playPauseButton->setText("▶");
+    } else if (selectedRow < currentVideoIndex) {
+        // 如果刪除的歌曲在當前播放歌曲之前，需要調整索引
+        currentVideoIndex--;
+    }
+    
+    // 從播放清單中移除
+    playlist.videos.removeAt(selectedRow);
+    
+    // 更新顯示
+    updatePlaylistDisplay();
+    updateButtonStates();
+    
+    // 保存變更
+    savePlaylistsToFile();
 }
