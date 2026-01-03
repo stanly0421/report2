@@ -317,7 +317,7 @@ void Widget::updateCurrentLyrics(qint64 position)
             item->setBackground(QBrush(QColor(173, 216, 230))); // Light blue
             ui->lyricsWidget->scrollToItem(item);
         } else {
-            item->setBackground(QBrush(Qt::white));
+            item->setBackground(QBrush()); // Use default background
         }
     }
 }
