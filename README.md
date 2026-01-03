@@ -11,7 +11,7 @@
 
 ### 1. YouTube 影片播放
 - 支援貼上 YouTube 連結直接播放
-- **內嵌式播放**: 影片直接在應用程式視窗內播放，無需跳轉到瀏覽器
+- **瀏覽器播放**: 點擊連結將在系統預設瀏覽器中播放影片
 - 支援多種 YouTube URL 格式
   - https://www.youtube.com/watch?v=VIDEO_ID
   - https://youtu.be/VIDEO_ID
@@ -62,7 +62,7 @@
 1. 複製 YouTube 影片連結
 2. 在頂部搜尋欄貼上連結
 3. 點擊「▶ 播放」按鈕
-4. 影片將在應用程式視窗內直接播放
+4. 點擊顯示的連結在瀏覽器中開啟並播放影片
 
 ### 播放本地音樂
 1. 點擊頂部的「📁 本地音樂」按鈕
@@ -92,12 +92,13 @@
 ## 編譯和運行
 
 ### 系統需求
-- Qt 6.x 或更高版本
+- Qt 6.x 或更高版本（也支援 Qt 5.x）
 - Qt Multimedia 模組
-- Qt WebEngineWidgets 模組
 - C++17 編譯器
 - 穩定的網路連線（播放 YouTube 影片時）
 - Python 3.x 和 Whisper（選用，用於語音轉錄）
+
+**注意**: 本專案不再需要 Qt WebEngineWidgets 模組，可以在任何標準 Qt 安裝中運行。
 
 ### 安裝依賴
 
@@ -105,10 +106,10 @@
 ```bash
 # 安裝 Qt 6 和必要模組
 sudo apt-get update
-sudo apt-get install qt6-base-dev qt6-multimedia-dev qt6-webengine-dev
+sudo apt-get install qt6-base-dev qt6-multimedia-dev
 
 # 或安裝 Qt 5 (如果使用 Qt 5)
-sudo apt-get install qtbase5-dev qtmultimedia5-dev qtwebengine5-dev
+sudo apt-get install qtbase5-dev qtmultimedia5-dev
 
 # 安裝 Python 和 Whisper (選用)
 sudo apt-get install python3 python3-pip ffmpeg
@@ -118,10 +119,10 @@ pip3 install openai-whisper
 #### Fedora/RHEL/CentOS
 ```bash
 # Qt 6
-sudo dnf install qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebengine-devel
+sudo dnf install qt6-qtbase-devel qt6-qtmultimedia-devel
 
 # 或 Qt 5
-sudo dnf install qt5-qtbase-devel qt5-qtmultimedia-devel qt5-qtwebengine-devel
+sudo dnf install qt5-qtbase-devel qt5-qtmultimedia-devel
 
 # 安裝 Python 和 Whisper (選用)
 sudo dnf install python3 python3-pip ffmpeg
@@ -142,7 +143,6 @@ pip3 install openai-whisper
 1. 下載並安裝 Qt from [qt.io](https://www.qt.io/download)
 2. 在安裝時確保選擇以下組件：
    - Qt Multimedia
-   - Qt WebEngine
 3. (選用) 安裝 Python 和 Whisper：
    - 下載 Python from [python.org](https://www.python.org)
    - 下載 FFmpeg from [ffmpeg.org](https://ffmpeg.org)
@@ -179,18 +179,20 @@ cmake --build .
 ### 核心類別
 - **QMediaPlayer**: 本地音樂播放器
 - **QAudioOutput**: 音訊輸出控制
-- **QWebEngineView**: 嵌入式 YouTube 影片播放器
+- **QTextBrowser**: HTML 內容顯示和連結開啟
 - **QProcess**: 執行 Whisper 語音轉錄腳本
 - **QFileDialog**: 檔案選擇對話框
 - **QListWidget**: 顯示播放清單（支援拖放排序）
 - **QComboBox**: 播放清單選擇器
 - **QRegularExpression**: YouTube 連結解析
+- **QDesktopServices**: 在瀏覽器中開啟 YouTube 連結
 
 ### YouTube 連結處理
 - 使用正則表達式解析 YouTube URL
 - 支援多種 URL 格式
-- 生成嵌入式播放連結
-- 在應用程式內直接播放
+- 生成標準 YouTube 觀看連結
+- 使用 QTextBrowser 顯示可點擊連結
+- 點擊連結在系統預設瀏覽器中開啟
 
 ### 本地音樂播放
 - 使用 Qt Multimedia 框架
@@ -211,17 +213,17 @@ cmake --build .
 - **左側面板**: 播放清單管理（支援拖放排序）
 - **中央面板**: 
   - 音樂資訊顯示
-  - 嵌入式 YouTube 播放器或本地音樂視覺化
+  - YouTube 連結顯示（可點擊在瀏覽器中播放）或本地音樂資訊
   - 字幕/轉錄文字顯示區域
   - 播放控制按鈕
 
 ## 注意事項
 
 ### YouTube 影片播放
-- YouTube 影片在應用程式視窗內嵌入播放
-- 需要穩定的網路連線
+- YouTube 影片連結會顯示在應用程式中
+- 點擊連結將在系統預設瀏覽器中開啟並播放
 - 不需要 YouTube API Key
-- 播放控制在影片播放器內操作
+- 不需要 Qt WebEngine 模組
 
 ### 本地音樂播放
 - 支援常見音訊格式
