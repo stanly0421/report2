@@ -1052,7 +1052,6 @@ void Widget::onPlaylistChanged(int index)
     updateTargetPlaylistComboBox();
     updateButtonStates();
 }
-}
 
 void Widget::updateTargetPlaylistComboBox()
 {
@@ -1634,7 +1633,6 @@ void Widget::onVolumeSliderChanged(int value)
     } else {
         volumeLabel->setText("🔊");
     }
-}
 }
 
 void Widget::restoreCurrentVideoTitle()
