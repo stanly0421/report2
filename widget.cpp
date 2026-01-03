@@ -31,6 +31,7 @@ Widget::Widget(QWidget *parent)
     , isShuffleMode(false)
     , isRepeatMode(false)
     , isPlaying(false)
+    , isProgressSliderPressed(false)
     , subtitleTimestampRegex(R"(\[(\d+\.?\d*)s\s*-\s*(\d+\.?\d*)s\])")
     , currentSubtitles("")
 {
@@ -287,6 +288,50 @@ void Widget::setupUI()
     videoDisplayArea->setHtml(generateWelcomeHTML());
     centerLayout->addWidget(videoDisplayArea, 1);
     
+    // 播放進度條區域
+    QWidget* progressWidget = new QWidget(centerPanel);
+    progressWidget->setStyleSheet("background-color: transparent;");
+    QHBoxLayout* progressLayout = new QHBoxLayout(progressWidget);
+    progressLayout->setContentsMargins(0, 0, 0, 0);
+    progressLayout->setSpacing(8);
+    
+    currentTimeLabel = new QLabel("00:00", progressWidget);
+    currentTimeLabel->setStyleSheet("color: #B3B3B3; font-size: 12px; min-width: 45px;");
+    progressLayout->addWidget(currentTimeLabel);
+    
+    progressSlider = new QSlider(Qt::Horizontal, progressWidget);
+    progressSlider->setStyleSheet(
+        "QSlider::groove:horizontal {"
+        "   border: none;"
+        "   height: 4px;"
+        "   background: #404040;"
+        "   border-radius: 2px;"
+        "}"
+        "QSlider::handle:horizontal {"
+        "   background: #1DB954;"
+        "   border: none;"
+        "   width: 12px;"
+        "   height: 12px;"
+        "   margin: -4px 0;"
+        "   border-radius: 6px;"
+        "}"
+        "QSlider::handle:horizontal:hover {"
+        "   background: #1ED760;"
+        "}"
+        "QSlider::sub-page:horizontal {"
+        "   background: #1DB954;"
+        "   border-radius: 2px;"
+        "}"
+    );
+    progressSlider->setEnabled(false);
+    progressLayout->addWidget(progressSlider, 1);
+    
+    totalTimeLabel = new QLabel("00:00", progressWidget);
+    totalTimeLabel->setStyleSheet("color: #B3B3B3; font-size: 12px; min-width: 45px;");
+    progressLayout->addWidget(totalTimeLabel);
+    
+    centerLayout->addWidget(progressWidget);
+    
     // 播放控制區域
     QWidget* controlWidget = new QWidget(centerPanel);
     controlWidget->setStyleSheet("background-color: #181818; border-radius: 8px; padding: 16px;");
@@ -349,7 +394,41 @@ void Widget::setupUI()
     
     controlLayout->addStretch();
     
-    toggleFavoriteButton = new QPushButton("❤️ 加入最愛", controlWidget);
+    // 音量控制
+    volumeLabel = new QLabel("🔊", controlWidget);
+    volumeLabel->setStyleSheet("color: #B3B3B3; font-size: 16px;");
+    controlLayout->addWidget(volumeLabel);
+    
+    volumeSlider = new QSlider(Qt::Horizontal, controlWidget);
+    volumeSlider->setRange(0, 100);
+    volumeSlider->setValue(50);
+    volumeSlider->setMaximumWidth(100);
+    volumeSlider->setStyleSheet(
+        "QSlider::groove:horizontal {"
+        "   border: none;"
+        "   height: 4px;"
+        "   background: #404040;"
+        "   border-radius: 2px;"
+        "}"
+        "QSlider::handle:horizontal {"
+        "   background: #1DB954;"
+        "   border: none;"
+        "   width: 10px;"
+        "   height: 10px;"
+        "   margin: -3px 0;"
+        "   border-radius: 5px;"
+        "}"
+        "QSlider::handle:horizontal:hover {"
+        "   background: #1ED760;"
+        "}"
+        "QSlider::sub-page:horizontal {"
+        "   background: #1DB954;"
+        "   border-radius: 2px;"
+        "}"
+    );
+    controlLayout->addWidget(volumeSlider);
+    
+    toggleFavoriteButton = new QPushButton("❤️ 加入播放清單", controlWidget);
     toggleFavoriteButton->setStyleSheet(
         "QPushButton {"
         "   background-color: #282828;"
@@ -405,6 +484,14 @@ void Widget::createConnections()
     connect(mediaPlayer, &QMediaPlayer::playbackStateChanged, this, &Widget::onMediaPlayerStateChanged);
     connect(mediaPlayer, &QMediaPlayer::positionChanged, this, &Widget::onMediaPlayerPositionChanged);
     connect(mediaPlayer, &QMediaPlayer::durationChanged, this, &Widget::onMediaPlayerDurationChanged);
+    
+    // 進度條控制
+    connect(progressSlider, &QSlider::sliderPressed, this, &Widget::onProgressSliderPressed);
+    connect(progressSlider, &QSlider::sliderReleased, this, &Widget::onProgressSliderReleased);
+    connect(progressSlider, &QSlider::sliderMoved, this, &Widget::onProgressSliderMoved);
+    
+    // 音量控制
+    connect(volumeSlider, &QSlider::valueChanged, this, &Widget::onVolumeSliderChanged);
     
     // Whisper 轉錄
     connect(whisperProcess, &QProcess::readyReadStandardOutput, this, &Widget::onWhisperOutputReady);
@@ -675,12 +762,33 @@ void Widget::onMediaPlayerStateChanged()
 
 void Widget::onMediaPlayerPositionChanged(qint64 position)
 {
-    // 可以在這裡更新進度條（如果需要的話）
+    // 更新進度條位置（當使用者沒有拖動時）
+    if (!isProgressSliderPressed && mediaPlayer->duration() > 0) {
+        progressSlider->setValue(position);
+        
+        // 更新當前時間顯示（mm:ss格式）
+        int totalSeconds = position / 1000;
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        currentTimeLabel->setText(QString("%1:%2")
+            .arg(minutes, 2, 10, QChar('0'))
+            .arg(seconds, 2, 10, QChar('0')));
+    }
 }
 
 void Widget::onMediaPlayerDurationChanged(qint64 duration)
 {
-    // 可以在這裡設置進度條的最大值（如果需要的話）
+    // 設置進度條範圍
+    progressSlider->setMaximum(duration);
+    progressSlider->setEnabled(duration > 0);
+    
+    // 更新總時長顯示（mm:ss格式）
+    int totalSeconds = duration / 1000;
+    int minutes = totalSeconds / 60;
+    int seconds = totalSeconds % 60;
+    totalTimeLabel->setText(QString("%1:%2")
+        .arg(minutes, 2, 10, QChar('0'))
+        .arg(seconds, 2, 10, QChar('0')));
 }
 
 void Widget::onPreviousClicked()
@@ -852,7 +960,13 @@ void Widget::toggleFavoriteForVideo(int videoIndex)
         favoritesPlaylist.videos.removeAt(favoriteIndex);
         video.isFavorite = false;
         if (videoIndex == currentVideoIndex) {
-            toggleFavoriteButton->setText("❤️ 加入最愛");
+            // 根據當前播放清單設置按鈕文字
+            if (currentPlaylist.name == "我的最愛") {
+                // 如果在最愛播放清單中，移除後按鈕還是顯示"移除最愛"
+                toggleFavoriteButton->setText("💔 移除最愛");
+            } else {
+                toggleFavoriteButton->setText("❤️ 加入最愛");
+            }
         }
         QMessageBox::information(this, "我的最愛", "已從最愛中移除！");
     } else {
@@ -931,6 +1045,13 @@ void Widget::onPlaylistChanged(int index)
     playedVideosInCurrentSession.clear();
     updatePlaylistDisplay();
     updateButtonStates();
+    
+    // 更新最愛按鈕文字
+    if (playlists[index].name == "我的最愛") {
+        toggleFavoriteButton->setText("💔 移除最愛");
+    } else {
+        toggleFavoriteButton->setText("❤️ 加入最愛");
+    }
 }
 
 void Widget::updatePlaylistDisplay()
@@ -942,8 +1063,7 @@ void Widget::updatePlaylistDisplay()
     const Playlist& playlist = playlists[currentPlaylistIndex];
     for (int i = 0; i < playlist.videos.size(); i++) {
         const VideoInfo& video = playlist.videos[i];
-        QString displayText = QString("%1. %2\n   %3")
-                                .arg(i + 1)
+        QString displayText = QString("%1\n   %2")
                                 .arg(video.title)
                                 .arg(video.channelTitle);
         
@@ -1004,11 +1124,37 @@ void Widget::playVideo(int index)
     // 更新顯示
     updateVideoLabels(video);
     
-    // 更新最愛按鈕
-    if (video.isFavorite) {
-        toggleFavoriteButton->setText("💔 移除最愛");
-    } else {
-        toggleFavoriteButton->setText("❤️ 加入最愛");
+    // 更新最愛按鈕 - 根據當前播放清單設置按鈕文字
+    if (currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.size()) {
+        if (playlists[currentPlaylistIndex].name == "我的最愛") {
+            toggleFavoriteButton->setText("💔 移除最愛");
+        } else {
+            // 檢查這首歌是否已在最愛中
+            bool isInFavorites = false;
+            for (int i = 0; i < playlists.size(); i++) {
+                if (playlists[i].name == "我的最愛") {
+                    for (const VideoInfo& favVideo : playlists[i].videos) {
+                        bool isSameVideo = false;
+                        if (video.isLocalFile && favVideo.isLocalFile) {
+                            isSameVideo = (favVideo.filePath == video.filePath);
+                        } else if (!video.isLocalFile && !favVideo.isLocalFile) {
+                            isSameVideo = (favVideo.videoId == video.videoId);
+                        }
+                        if (isSameVideo) {
+                            isInFavorites = true;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (isInFavorites) {
+                toggleFavoriteButton->setText("💔 移除最愛");
+            } else {
+                toggleFavoriteButton->setText("❤️ 加入最愛");
+            }
+        }
     }
     
     updatePlaylistDisplay();
@@ -1258,7 +1404,6 @@ QString Widget::generateLocalMusicHTML(const QString& title, const QString& file
         "<head>"
         "<style>"
         "%1"
-        ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
         ".subtitle-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid #282828; }"
         ".subtitle-title { font-size: 16px; color: #1DB954; margin-bottom: 10px; font-weight: bold; }"
         ".subtitle-content { font-size: 14px; color: #B3B3B3; line-height: 1.6; }"
@@ -1267,7 +1412,6 @@ QString Widget::generateLocalMusicHTML(const QString& title, const QString& file
         "<body>"
         "<h2>🎵 本地音樂</h2>"
         "<p>%2</p>"
-        "<p class='filename'>檔案: %3</p>"
         "<div class='subtitle-section' id='subtitle-area'>"
         "<div class='subtitle-title'>📝 字幕</div>"
         "<div class='subtitle-content' id='subtitle-content'>正在載入字幕，點擊時間戳可跳轉到該位置...</div>"
@@ -1275,8 +1419,7 @@ QString Widget::generateLocalMusicHTML(const QString& title, const QString& file
         "</body>"
         "</html>"
     ).arg(BASE_HTML_STYLE)
-     .arg(title.toHtmlEscaped())
-     .arg(fileName.toHtmlEscaped());
+     .arg(title.toHtmlEscaped());
 }
 
 void Widget::updateVideoLabels(const VideoInfo& video)
@@ -1404,7 +1547,6 @@ void Widget::updateLocalMusicDisplay(const QString& title, const QString& fileNa
         "<head>"
         "<style>"
         "%1"
-        ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
         ".subtitle-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid #282828; }"
         ".subtitle-title { font-size: 16px; color: #1DB954; margin-bottom: 10px; font-weight: bold; }"
         ".subtitle-content { font-size: 14px; color: #B3B3B3; line-height: 1.6; }"
@@ -1413,16 +1555,14 @@ void Widget::updateLocalMusicDisplay(const QString& title, const QString& fileNa
         "<body>"
         "<h2>🎵 本地音樂</h2>"
         "<p>%2</p>"
-        "<p class='filename'>檔案: %3</p>"
         "<div class='subtitle-section'>"
         "<div class='subtitle-title'>📝 字幕</div>"
-        "<div class='subtitle-content'>%4</div>"
+        "<div class='subtitle-content'>%3</div>"
         "</div>"
         "</body>"
         "</html>"
     ).arg(BASE_HTML_STYLE)
      .arg(title.toHtmlEscaped())
-     .arg(fileName.toHtmlEscaped())
      .arg(subtitleContent);
     
     videoDisplayArea->setHtml(html);
@@ -1463,6 +1603,50 @@ void Widget::onSubtitleLinkClicked(const QUrl& url)
             QMessageBox::information(this, "提示", "請先播放音樂後再跳轉到字幕位置。");
         }
     }
+}
+
+void Widget::onProgressSliderPressed()
+{
+    isProgressSliderPressed = true;
+}
+
+void Widget::onProgressSliderReleased()
+{
+    isProgressSliderPressed = false;
+    // 當使用者放開滑桿時，設置播放位置
+    if (mediaPlayer->duration() > 0) {
+        mediaPlayer->setPosition(progressSlider->value());
+    }
+}
+
+void Widget::onProgressSliderMoved(int position)
+{
+    // 當使用者拖動滑桿時，更新時間顯示
+    int totalSeconds = position / 1000;
+    int minutes = totalSeconds / 60;
+    int seconds = totalSeconds % 60;
+    currentTimeLabel->setText(QString("%1:%2")
+        .arg(minutes, 2, 10, QChar('0'))
+        .arg(seconds, 2, 10, QChar('0')));
+}
+
+void Widget::onVolumeSliderChanged(int value)
+{
+    // 設置音量（0.0 到 1.0）
+    qreal volume = value / 100.0;
+    audioOutput->setVolume(volume);
+    
+    // 更新音量圖標
+    if (value == 0) {
+        volumeLabel->setText("🔇");
+    } else if (value < 33) {
+        volumeLabel->setText("🔈");
+    } else if (value < 66) {
+        volumeLabel->setText("🔉");
+    } else {
+        volumeLabel->setText("🔊");
+    }
+}
 }
 
 void Widget::restoreCurrentVideoTitle()

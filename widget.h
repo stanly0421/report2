@@ -86,6 +86,12 @@ private slots:
     void onMediaPlayerPositionChanged(qint64 position);
     void onMediaPlayerDurationChanged(qint64 duration);
     
+    // 進度條和音量控制
+    void onProgressSliderPressed();
+    void onProgressSliderReleased();
+    void onProgressSliderMoved(int position);
+    void onVolumeSliderChanged(int value);
+    
     // Whisper 輸出
     void onWhisperOutputReady();
     void onWhisperFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -142,6 +148,11 @@ private:
     QPushButton* deletePlaylistButton;
     QListWidget* playlistWidget;
     QComboBox* playlistComboBox;
+    QSlider* progressSlider;
+    QLabel* currentTimeLabel;
+    QLabel* totalTimeLabel;
+    QSlider* volumeSlider;
+    QLabel* volumeLabel;
     
     // 播放清單數據
     QList<Playlist> playlists;
@@ -150,6 +161,7 @@ private:
     bool isShuffleMode;
     bool isRepeatMode;
     bool isPlaying;
+    bool isProgressSliderPressed;  // 追蹤進度條是否被按下
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
     QRegularExpression subtitleTimestampRegex;  // Regex pattern for parsing subtitle timestamps
