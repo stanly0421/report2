@@ -101,6 +101,9 @@ private:
     void playYouTubeLink(const QString& link);
     void playLocalFile(const QString& filePath);
     QString extractYouTubeVideoId(const QString& url);
+    QString generateYouTubeDisplayHTML(const QString& title, const QString& channel, const QString& videoId);
+    QString generateLocalMusicHTML(const QString& title, const QString& fileName);
+    void updateVideoLabels(const VideoInfo& video);
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
 

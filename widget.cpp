@@ -549,39 +549,10 @@ void Widget::playYouTubeLink(const QString& link)
     video.filePath = "";
     
     // 使用 QTextBrowser 顯示 YouTube 影片連結
-    QString watchUrl = QString("https://www.youtube.com/watch?v=%1").arg(videoId);
-    QString displayHTML = QString(
-        "<!DOCTYPE html>"
-        "<html>"
-        "<head>"
-        "<style>"
-        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
-        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
-        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
-        "a { color: #1DB954; text-decoration: none; font-size: 20px; font-weight: bold; }"
-        "a:hover { color: #1ED760; text-decoration: underline; }"
-        ".info { font-size: 14px; color: #888; margin: 30px 0; }"
-        "</style>"
-        "</head>"
-        "<body>"
-        "<h2>🎵 YouTube 影片</h2>"
-        "<p>%1</p>"
-        "<p>%2</p>"
-        "<div style='margin: 40px 0;'>"
-        "<a href='%3'>🔗 點擊此處在瀏覽器中播放</a>"
-        "</div>"
-        "<p class='info'>由於不使用 WebEngine，YouTube 影片將在瀏覽器中播放</p>"
-        "</body>"
-        "</html>"
-    ).arg(video.title.toHtmlEscaped())
-     .arg(video.channelTitle.toHtmlEscaped())
-     .arg(watchUrl);
-    
-    videoDisplayArea->setHtml(displayHTML);
+    videoDisplayArea->setHtml(generateYouTubeDisplayHTML(video.title, video.channelTitle, videoId));
     
     // 顯示影片資訊
-    videoTitleLabel->setText(video.title);
-    channelLabel->setText(video.channelTitle);
+    updateVideoLabels(video);
     
     // 更新狀態
     isPlaying = true;
@@ -616,29 +587,10 @@ void Widget::playLocalFile(const QString& filePath)
     mediaPlayer->play();
     
     // 在 WebView 中顯示本地音樂資訊
-    QString displayHTML = QString(
-        "<!DOCTYPE html>"
-        "<html>"
-        "<head>"
-        "<style>"
-        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
-        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
-        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
-        ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
-        "</style>"
-        "</head>"
-        "<body>"
-        "<h2>🎵 本地音樂</h2>"
-        "<p>%1</p>"
-        "<p class='filename'>檔案: %2</p>"
-        "<p style='color: #666; font-size: 12px; margin-top: 30px;'>正在播放本地音樂檔案</p>"
-        "</body>"
-        "</html>"
-    ).arg(video.title.toHtmlEscaped()).arg(fileInfo.fileName().toHtmlEscaped());
+    QFileInfo fileInfo(filePath);
+    videoDisplayArea->setHtml(generateLocalMusicHTML(video.title, fileInfo.fileName()));
     
-    videoDisplayArea->setHtml(displayHTML);
-    videoTitleLabel->setText(video.title);
-    channelLabel->setText(video.channelTitle);
+    updateVideoLabels(video);
     
     // 更新播放狀態
     isPlaying = true;
@@ -1015,27 +967,8 @@ void Widget::playVideo(int index)
         mediaPlayer->play();
         
         QFileInfo fileInfo(video.filePath);
-        QString displayHTML = QString(
-            "<!DOCTYPE html>"
-            "<html>"
-            "<head>"
-            "<style>"
-            "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
-            "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
-            "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
-            ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
-            "</style>"
-            "</head>"
-            "<body>"
-            "<h2>🎵 本地音樂</h2>"
-            "<p>%1</p>"
-            "<p class='filename'>檔案: %2</p>"
-            "<p style='color: #666; font-size: 12px; margin-top: 30px;'>正在播放本地音樂檔案</p>"
-            "</body>"
-            "</html>"
-        ).arg(video.title.toHtmlEscaped()).arg(fileInfo.fileName().toHtmlEscaped());
+        videoDisplayArea->setHtml(generateLocalMusicHTML(video.title, fileInfo.fileName()));
         
-        videoDisplayArea->setHtml(displayHTML);
         isPlaying = true;
         playPauseButton->setText("⏸");
         
@@ -1043,34 +976,7 @@ void Widget::playVideo(int index)
         startWhisperTranscription(video.filePath);
     } else {
         // 播放 YouTube 影片 - 顯示連結供用戶在瀏覽器中播放
-        QString watchUrl = QString("https://www.youtube.com/watch?v=%1").arg(video.videoId);
-        QString displayHTML = QString(
-            "<!DOCTYPE html>"
-            "<html>"
-            "<head>"
-            "<style>"
-            "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
-            "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
-            "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
-            "a { color: #1DB954; text-decoration: none; font-size: 20px; font-weight: bold; }"
-            "a:hover { color: #1ED760; text-decoration: underline; }"
-            ".info { font-size: 14px; color: #888; margin: 30px 0; }"
-            "</style>"
-            "</head>"
-            "<body>"
-            "<h2>🎵 %1</h2>"
-            "<p>%2</p>"
-            "<div style='margin: 40px 0;'>"
-            "<a href='%3'>🔗 點擊此處在瀏覽器中播放</a>"
-            "</div>"
-            "<p class='info'>由於不使用 WebEngine，YouTube 影片將在瀏覽器中播放</p>"
-            "</body>"
-            "</html>"
-        ).arg(video.title.toHtmlEscaped())
-         .arg(video.channelTitle.toHtmlEscaped())
-         .arg(watchUrl);
-        
-        videoDisplayArea->setHtml(displayHTML);
+        videoDisplayArea->setHtml(generateYouTubeDisplayHTML(video.title, video.channelTitle, video.videoId));
         isPlaying = true;
         playPauseButton->setText("⏸");
         
@@ -1079,8 +985,7 @@ void Widget::playVideo(int index)
     }
     
     // 更新顯示
-    videoTitleLabel->setText(video.title);
-    channelLabel->setText(video.channelTitle);
+    updateVideoLabels(video);
     
     // 更新最愛按鈕
     if (video.isFavorite) {
@@ -1275,6 +1180,66 @@ QList<int> Widget::getUnplayedVideoIndices(bool excludeCurrent)
     }
     
     return unplayedVideos;
+}
+
+QString Widget::generateYouTubeDisplayHTML(const QString& title, const QString& channel, const QString& videoId)
+{
+    QString watchUrl = QString("https://www.youtube.com/watch?v=%1").arg(videoId);
+    return QString(
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<style>"
+        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
+        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
+        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+        "a { color: #1DB954; text-decoration: none; font-size: 20px; font-weight: bold; }"
+        "a:hover { color: #1ED760; text-decoration: underline; }"
+        ".info { font-size: 14px; color: #888; margin: 30px 0; }"
+        "</style>"
+        "</head>"
+        "<body>"
+        "<h2>🎵 %1</h2>"
+        "<p>%2</p>"
+        "<div style='margin: 40px 0;'>"
+        "<a href='%3'>🔗 點擊此處在瀏覽器中播放</a>"
+        "</div>"
+        "<p class='info'>由於不使用 WebEngine，YouTube 影片將在瀏覽器中播放</p>"
+        "</body>"
+        "</html>"
+    ).arg(title.toHtmlEscaped())
+     .arg(channel.toHtmlEscaped())
+     .arg(watchUrl);
+}
+
+QString Widget::generateLocalMusicHTML(const QString& title, const QString& fileName)
+{
+    return QString(
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<style>"
+        "body { background-color: #000000; color: #FFFFFF; font-family: Arial, sans-serif; text-align: center; padding: 50px; }"
+        "h2 { color: #1DB954; font-size: 32px; margin-bottom: 20px; }"
+        "p { font-size: 18px; margin: 20px 0; color: #B3B3B3; }"
+        ".filename { font-size: 14px; color: #888; margin: 10px 0; }"
+        "</style>"
+        "</head>"
+        "<body>"
+        "<h2>🎵 本地音樂</h2>"
+        "<p>%1</p>"
+        "<p class='filename'>檔案: %2</p>"
+        "<p style='color: #666; font-size: 12px; margin-top: 30px;'>正在播放本地音樂檔案</p>"
+        "</body>"
+        "</html>"
+    ).arg(title.toHtmlEscaped())
+     .arg(fileName.toHtmlEscaped());
+}
+
+void Widget::updateVideoLabels(const VideoInfo& video)
+{
+    videoTitleLabel->setText(video.title);
+    channelLabel->setText(video.channelTitle);
 }
 
 QString Widget::createVideoDisplayHTML(const VideoInfo& video)
