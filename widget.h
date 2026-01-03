@@ -71,8 +71,7 @@ private slots:
     
     // 播放清單管理
     void onVideoDoubleClicked(QListWidgetItem* item);
-    void onToggleFavoriteClicked();
-    void toggleFavoriteForVideo(int videoIndex);
+    void onAddToPlaylistClicked();
     void onDeleteFromPlaylist();
     void onPlaylistContextMenu(const QPoint& pos);
     
@@ -103,6 +102,7 @@ private:
     void setupUI();
     void createConnections();
     void updatePlaylistDisplay();
+    void updateTargetPlaylistComboBox();
     void playVideo(int index);
     void updateButtonStates();
     void savePlaylistsToFile();
@@ -143,7 +143,8 @@ private:
     QPushButton* nextButton;
     QPushButton* shuffleButton;
     QPushButton* repeatButton;
-    QPushButton* toggleFavoriteButton;
+    QPushButton* addToPlaylistButton;
+    QComboBox* targetPlaylistComboBox;
     QPushButton* newPlaylistButton;
     QPushButton* deletePlaylistButton;
     QListWidget* playlistWidget;
