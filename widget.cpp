@@ -16,6 +16,7 @@
 #include <QProcess>
 #include <QDesktopServices>
 #include <QTimer>
+#include <cmath>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
@@ -30,6 +31,7 @@ Widget::Widget(QWidget *parent)
     , isShuffleMode(false)
     , isRepeatMode(false)
     , isPlaying(false)
+    , subtitleTimestampRegex(R"(\[(\d+\.?\d*)s\s*-\s*(\d+\.?\d*)s\])")
 {
     ui->setupUi(this);
     
@@ -1292,7 +1294,6 @@ void Widget::onWhisperOutputReady()
     if (!text.isEmpty()) {
         // 解析時間戳格式: [start - end] text
         // 例如: [0.00s - 5.23s] 這是一段文字
-        QRegularExpression timestampRegex(R"(\[(\d+\.?\d*)s\s*-\s*(\d+\.?\d*)s\])");
         
         QString htmlText;
         QTextStream stream(&htmlText);
@@ -1301,7 +1302,7 @@ void Widget::onWhisperOutputReady()
         for (const QString& line : lines) {
             if (line.isEmpty()) continue;
             
-            QRegularExpressionMatch match = timestampRegex.match(line);
+            QRegularExpressionMatch match = subtitleTimestampRegex.match(line);
             if (match.hasMatch()) {
                 // 找到時間戳
                 QString startTime = match.captured(1);
@@ -1341,7 +1342,7 @@ void Widget::onSubtitleLinkClicked(const QUrl& url)
     bool ok;
     double seconds = timeStr.toDouble(&ok);
     
-    if (ok && seconds >= 0) {
+    if (ok && std::isfinite(seconds) && seconds >= 0) {
         // 轉換為毫秒
         qint64 positionMs = static_cast<qint64>(seconds * 1000);
         
@@ -1357,17 +1358,20 @@ void Widget::onSubtitleLinkClicked(const QUrl& url)
             videoTitleLabel->setText(QString("跳轉到 %1").arg(timeDisplay));
             
             // 2 秒後恢復原標題
-            QTimer::singleShot(2000, this, [this]() {
-                if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
-                    currentPlaylistIndex < playlists.size()) {
-                    const Playlist& playlist = playlists[currentPlaylistIndex];
-                    if (currentVideoIndex < playlist.videos.size()) {
-                        videoTitleLabel->setText(playlist.videos[currentVideoIndex].title);
-                    }
-                }
-            });
+            QTimer::singleShot(2000, this, &Widget::restoreCurrentVideoTitle);
         } else {
             QMessageBox::information(this, "提示", "請先播放音樂後再跳轉到字幕位置。");
+        }
+    }
+}
+
+void Widget::restoreCurrentVideoTitle()
+{
+    if (currentVideoIndex >= 0 && currentPlaylistIndex >= 0 && 
+        currentPlaylistIndex < playlists.size()) {
+        const Playlist& playlist = playlists[currentPlaylistIndex];
+        if (currentVideoIndex < playlist.videos.size()) {
+            videoTitleLabel->setText(playlist.videos[currentVideoIndex].title);
         }
     }
 }

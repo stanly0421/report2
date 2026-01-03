@@ -110,6 +110,7 @@ private:
     void updateVideoLabels(const VideoInfo& video);
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
+    void restoreCurrentVideoTitle();
 
     Ui::Widget *ui;
     
@@ -148,6 +149,7 @@ private:
     bool isPlaying;
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
+    QRegularExpression subtitleTimestampRegex;  // 字幕時間戳解析正則表達式
 };
 
 #endif // WIDGET_H
