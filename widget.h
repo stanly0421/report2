@@ -153,7 +153,7 @@ private:
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
     QRegularExpression subtitleTimestampRegex;  // Regex pattern for parsing subtitle timestamps
-    QString currentSubtitles;  // 儲存當前字幕內容
+    QString currentSubtitles;  // 累積的字幕內容，用於整合顯示在主視窗
 };
 
 #endif // WIDGET_H

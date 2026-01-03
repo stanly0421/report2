@@ -1514,6 +1514,8 @@ void Widget::onPlaylistContextMenu(const QPoint& pos)
     QListWidgetItem* item = playlistWidget->itemAt(pos);
     if (!item) return;
     
+    int itemRow = playlistWidget->row(item);
+    
     QMenu contextMenu(this);
     
     QAction* playAction = contextMenu.addAction("▶ 播放");
@@ -1523,14 +1525,14 @@ void Widget::onPlaylistContextMenu(const QPoint& pos)
     QAction* selectedAction = contextMenu.exec(playlistWidget->mapToGlobal(pos));
     
     if (selectedAction == playAction) {
-        int index = playlistWidget->row(item);
-        playVideo(index);
+        playVideo(itemRow);
     } else if (selectedAction == deleteAction) {
+        // 確保選中要刪除的項目
+        playlistWidget->setCurrentRow(itemRow);
         onDeleteFromPlaylist();
     } else if (selectedAction == addToFavAction) {
         // 使用新的方法來加入最愛
-        int index = playlistWidget->row(item);
-        toggleFavoriteForVideo(index);
+        toggleFavoriteForVideo(itemRow);
     }
 }
 
