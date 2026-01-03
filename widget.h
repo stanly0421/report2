@@ -72,6 +72,7 @@ private slots:
     // 播放清單管理
     void onVideoDoubleClicked(QListWidgetItem* item);
     void onToggleFavoriteClicked();
+    void toggleFavoriteForVideo(int videoIndex);
     void onDeleteFromPlaylist();
     void onPlaylistContextMenu(const QPoint& pos);
     
@@ -121,12 +122,11 @@ private:
     QMediaPlayer* mediaPlayer;
     QAudioOutput* audioOutput;
     
-    // 影片顯示區域 - 使用 QTextBrowser 顯示內容，點擊連結開啟瀏覽器
+    // 影片顯示區域 - 使用 QTextBrowser 顯示內容和字幕
     QTextBrowser* videoDisplayArea;
     
     // Whisper 轉錄
     QProcess* whisperProcess;
-    QTextBrowser* subtitleDisplay;  // 使用 QTextBrowser 以支援可點擊連結
     
     // UI 元件
     QPushButton* loadLocalFileButton;

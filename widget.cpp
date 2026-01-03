@@ -26,7 +26,6 @@ Widget::Widget(QWidget *parent)
     , audioOutput(new QAudioOutput(this))
     , videoDisplayArea(nullptr)
     , whisperProcess(new QProcess(this))
-    , subtitleDisplay(nullptr)
     , currentPlaylistIndex(-1)
     , currentVideoIndex(-1)
     , isShuffleMode(false)
@@ -288,9 +287,6 @@ void Widget::setupUI()
     videoDisplayArea->setHtml(generateWelcomeHTML());
     centerLayout->addWidget(videoDisplayArea, 1);
     
-    // 字幕將顯示在 videoDisplayArea 中，不再需要單獨的字幕顯示區域
-    subtitleDisplay = videoDisplayArea;  // 使用同一個顯示區域
-    
     // 播放控制區域
     QWidget* controlWidget = new QWidget(centerPanel);
     controlWidget->setStyleSheet("background-color: #181818; border-radius: 8px; padding: 16px;");
@@ -450,7 +446,52 @@ void Widget::onLoadLocalFileClicked()
         "音樂檔案 (*.mp3 *.wav *.flac *.m4a *.ogg *.aac);;所有檔案 (*.*)");
     
     if (!filePath.isEmpty()) {
-        playLocalFile(filePath);
+        // 創建影片資訊
+        VideoInfo video;
+        video.filePath = filePath;
+        video.videoId = "";
+        
+        // 從檔案名提取標題
+        QFileInfo fileInfo(filePath);
+        video.title = fileInfo.baseName();
+        video.channelTitle = "本地音樂";
+        video.isFavorite = false;
+        video.isLocalFile = true;
+        
+        // 添加到當前播放清單
+        if (currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.size()) {
+            // 檢查是否已存在
+            bool alreadyExists = false;
+            for (const VideoInfo& existingVideo : playlists[currentPlaylistIndex].videos) {
+                if (existingVideo.isLocalFile && existingVideo.filePath == filePath) {
+                    alreadyExists = true;
+                    break;
+                }
+            }
+            
+            if (!alreadyExists) {
+                playlists[currentPlaylistIndex].videos.append(video);
+                updatePlaylistDisplay();
+                savePlaylistsToFile();
+            }
+            
+            // 播放新添加的歌曲（或已存在的歌曲）
+            int targetIndex = -1;
+            for (int i = 0; i < playlists[currentPlaylistIndex].videos.size(); i++) {
+                if (playlists[currentPlaylistIndex].videos[i].isLocalFile &&
+                    playlists[currentPlaylistIndex].videos[i].filePath == filePath) {
+                    targetIndex = i;
+                    break;
+                }
+            }
+            
+            if (targetIndex >= 0) {
+                playVideo(targetIndex);
+            }
+        } else {
+            // 如果沒有播放清單，直接播放
+            playLocalFile(filePath);
+        }
     }
 }
 
@@ -753,13 +794,18 @@ void Widget::onVideoDoubleClicked(QListWidgetItem* item)
 
 void Widget::onToggleFavoriteClicked()
 {
-    if (currentVideoIndex < 0 || currentPlaylistIndex < 0) return;
+    toggleFavoriteForVideo(currentVideoIndex);
+}
+
+void Widget::toggleFavoriteForVideo(int videoIndex)
+{
+    if (videoIndex < 0 || currentPlaylistIndex < 0) return;
     if (currentPlaylistIndex >= playlists.size()) return;
     
     Playlist& currentPlaylist = playlists[currentPlaylistIndex];
-    if (currentVideoIndex >= currentPlaylist.videos.size()) return;
+    if (videoIndex >= currentPlaylist.videos.size()) return;
     
-    VideoInfo& video = currentPlaylist.videos[currentVideoIndex];
+    VideoInfo& video = currentPlaylist.videos[videoIndex];
     
     // 找到 "我的最愛" 播放清單
     int favoritesIndex = -1;
@@ -805,7 +851,9 @@ void Widget::onToggleFavoriteClicked()
         // 從最愛移除
         favoritesPlaylist.videos.removeAt(favoriteIndex);
         video.isFavorite = false;
-        toggleFavoriteButton->setText("❤️ 加入最愛");
+        if (videoIndex == currentVideoIndex) {
+            toggleFavoriteButton->setText("❤️ 加入最愛");
+        }
         QMessageBox::information(this, "我的最愛", "已從最愛中移除！");
     } else {
         // 加入最愛
@@ -813,11 +861,14 @@ void Widget::onToggleFavoriteClicked()
         favoriteVideo.isFavorite = true;
         favoritesPlaylist.videos.append(favoriteVideo);
         video.isFavorite = true;
-        toggleFavoriteButton->setText("💔 移除最愛");
+        if (videoIndex == currentVideoIndex) {
+            toggleFavoriteButton->setText("💔 移除最愛");
+        }
         QMessageBox::information(this, "我的最愛", "已加入最愛！");
     }
     
     updatePlaylistDisplay();
+    savePlaylistsToFile();
 }
 
 void Widget::onNewPlaylistClicked()
@@ -1477,11 +1528,9 @@ void Widget::onPlaylistContextMenu(const QPoint& pos)
     } else if (selectedAction == deleteAction) {
         onDeleteFromPlaylist();
     } else if (selectedAction == addToFavAction) {
-        // 暫時選中這首歌並加入最愛
-        int oldIndex = currentVideoIndex;
-        currentVideoIndex = playlistWidget->row(item);
-        onToggleFavoriteClicked();
-        currentVideoIndex = oldIndex;
+        // 使用新的方法來加入最愛
+        int index = playlistWidget->row(item);
+        toggleFavoriteForVideo(index);
     }
 }
 
