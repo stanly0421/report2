@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>播放清單管理器</string>
+   <string>音樂播放器 Music Player</string>
   </property>
  </widget>
  <resources/>
