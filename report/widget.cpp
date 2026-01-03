@@ -9,6 +9,9 @@
 #include <QStringConverter>
 #endif
 
+// Static member initialization
+const QRegularExpression Widget::lyricsTimeRegex(R"(\[(\d{2}):(\d{2})(?:\.(\d{2}))?\])");
+
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
@@ -372,13 +375,10 @@ void Widget::loadLyricsFile(const QString &filename)
     in.setEncoding(QStringConverter::Utf8);
 #endif
     
-    // Regular expression to match LRC format: [mm:ss.xx] or [mm:ss]
-    QRegularExpression timeRegex(R"(\[(\d{2}):(\d{2})(?:\.(\d{2}))?\])");
-    
     while (!in.atEnd()) {
         QString line = in.readLine().trimmed();
         
-        QRegularExpressionMatch match = timeRegex.match(line);
+        QRegularExpressionMatch match = lyricsTimeRegex.match(line);
         if (match.hasMatch()) {
             // Extract time components
             int minutes = match.captured(1).toInt();
@@ -390,7 +390,7 @@ void Widget::loadLyricsFile(const QString &filename)
             
             // Extract lyrics text (remove all time tags)
             QString lyricsText = line;
-            lyricsText.remove(timeRegex);
+            lyricsText.remove(lyricsTimeRegex);
             lyricsText = lyricsText.trimmed();
             
             if (!lyricsText.isEmpty()) {

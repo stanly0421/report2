@@ -81,6 +81,9 @@ private:
     QMap<qint64, QString> lyricsMap;
     QMap<qint64, QListWidgetItem*> lyricsItemMap;
     
+    // Constants for lyrics parsing
+    static const QRegularExpression lyricsTimeRegex;
+    
     // Helper functions
     QString formatTime(qint64 milliseconds);
     void loadLyricsFile(const QString &filename);
