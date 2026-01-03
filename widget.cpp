@@ -169,8 +169,13 @@ void Widget::updatePlaylistDisplay()
     if (currentPlaylistIndex < 0 || currentPlaylistIndex >= playlists.size()) return;
     
     const Playlist& playlist = playlists[currentPlaylistIndex];
-    QListWidgetItem* item = new QListWidgetItem(QString("播放清單: %1").arg(playlist.name));
+    QListWidgetItem* item = new QListWidgetItem(QString("目前選擇的播放清單: %1").arg(playlist.name));
     playlistWidget->addItem(item);
+    
+    // 顯示提示訊息
+    QListWidgetItem* hintItem = new QListWidgetItem("(此播放清單目前沒有內容)");
+    hintItem->setFlags(Qt::NoItemFlags);  // 不可選擇
+    playlistWidget->addItem(hintItem);
 }
 
 void Widget::savePlaylistsToFile()
@@ -181,23 +186,17 @@ void Widget::savePlaylistsToFile()
         dir.mkpath(configDir);
     }
     
-    QString configFile = configDir + "/playlists.json";
+    QString configFile = configDir + "/playlists.txt";
     
     QFile file(configFile);
-    if (file.open(QIODevice::WriteOnly)) {
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&file);
-        out << "{\n";
-        out << "  \"playlists\": [\n";
-        for (int i = 0; i < playlists.size(); i++) {
-            out << "    {\"name\": \"" << playlists[i].name << "\"}";
-            if (i < playlists.size() - 1) out << ",";
-            out << "\n";
+        for (const Playlist& playlist : playlists) {
+            out << playlist.name << "\n";
         }
-        out << "  ],\n";
         if (currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.size()) {
-            out << "  \"lastPlaylist\": \"" << playlists[currentPlaylistIndex].name << "\"\n";
+            out << "LAST:" << playlists[currentPlaylistIndex].name << "\n";
         }
-        out << "}\n";
         file.close();
     }
 }
@@ -205,11 +204,27 @@ void Widget::savePlaylistsToFile()
 void Widget::loadPlaylistsFromFile()
 {
     QString configDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QString configFile = configDir + "/playlists.json";
+    QString configFile = configDir + "/playlists.txt";
     
     QFile file(configFile);
-    if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         return;
+    }
+    
+    QTextStream in(&file);
+    playlists.clear();
+    
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        if (line.isEmpty()) continue;
+        
+        if (line.startsWith("LAST:")) {
+            lastPlaylistName = line.mid(5);
+        } else {
+            Playlist playlist;
+            playlist.name = line;
+            playlists.append(playlist);
+        }
     }
     
     file.close();
