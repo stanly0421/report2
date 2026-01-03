@@ -72,6 +72,9 @@ private slots:
     // 播放清單管理
     void onVideoDoubleClicked(QListWidgetItem* item);
     void onToggleFavoriteClicked();
+    void toggleFavoriteForVideo(int videoIndex);
+    void onDeleteFromPlaylist();
+    void onPlaylistContextMenu(const QPoint& pos);
     
     // 播放清單選擇
     void onNewPlaylistClicked();
@@ -111,6 +114,7 @@ private:
     QString createVideoDisplayHTML(const VideoInfo& video);
     void startWhisperTranscription(const QString& audioFilePath);
     void restoreCurrentVideoTitle();
+    void updateLocalMusicDisplay(const QString& title, const QString& fileName, const QString& subtitles);
 
     Ui::Widget *ui;
     
@@ -118,12 +122,11 @@ private:
     QMediaPlayer* mediaPlayer;
     QAudioOutput* audioOutput;
     
-    // 影片顯示區域 - 使用 QTextBrowser 顯示內容，點擊連結開啟瀏覽器
+    // 影片顯示區域 - 使用 QTextBrowser 顯示內容和字幕
     QTextBrowser* videoDisplayArea;
     
     // Whisper 轉錄
     QProcess* whisperProcess;
-    QTextBrowser* subtitleDisplay;  // 使用 QTextBrowser 以支援可點擊連結
     
     // UI 元件
     QPushButton* loadLocalFileButton;
@@ -150,6 +153,7 @@ private:
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
     QRegularExpression subtitleTimestampRegex;  // Regex pattern for parsing subtitle timestamps
+    QString currentSubtitles;  // 累積的字幕內容，用於整合顯示在主視窗
 };
 
 #endif // WIDGET_H
