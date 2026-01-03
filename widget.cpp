@@ -1343,17 +1343,24 @@ void Widget::onSubtitleLinkClicked(const QUrl& url)
     double seconds = timeStr.toDouble(&ok);
     
     if (ok && std::isfinite(seconds) && seconds >= 0) {
-        // 轉換為毫秒
+        // 檢查是否超出媒體時長
+        qint64 duration = mediaPlayer->duration();
         qint64 positionMs = static_cast<qint64>(seconds * 1000);
+        
+        if (duration > 0 && positionMs > duration) {
+            QMessageBox::warning(this, "提示", "時間戳超出音樂總長度。");
+            return;
+        }
         
         // 跳轉到指定位置
         if (mediaPlayer->playbackState() != QMediaPlayer::StoppedState) {
             mediaPlayer->setPosition(positionMs);
             
-            // 顯示提示訊息
+            // 顯示提示訊息（使用四捨五入確保準確顯示）
+            int totalSeconds = qRound(seconds);
             QString timeDisplay = QString("%1:%2")
-                .arg(static_cast<int>(seconds) / 60, 2, 10, QChar('0'))
-                .arg(static_cast<int>(seconds) % 60, 2, 10, QChar('0'));
+                .arg(totalSeconds / 60, 2, 10, QChar('0'))
+                .arg(totalSeconds % 60, 2, 10, QChar('0'));
             
             videoTitleLabel->setText(QString("跳轉到 %1").arg(timeDisplay));
             

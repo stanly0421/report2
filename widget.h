@@ -149,7 +149,7 @@ private:
     bool isPlaying;
     QString lastPlaylistName;
     QSet<int> playedVideosInCurrentSession;
-    QRegularExpression subtitleTimestampRegex;  // 字幕時間戳解析正則表達式
+    QRegularExpression subtitleTimestampRegex;  // Regex pattern for parsing subtitle timestamps
 };
 
 #endif // WIDGET_H
